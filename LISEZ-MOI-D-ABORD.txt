@@ -4,4 +4,4 @@ Ouvrir index.html pour utiliser le CRM local. Le fichier démarre vide et conser
 
 Sauvegarder régulièrement depuis Paramètres > Export JSON. L'import est validé et demande une confirmation avant restauration.
 
-Le dépôt GitHub reste privé et Pages est actuellement désactivé. Les anciennes versions Git ne sont pas encore purgées ; cette opération attend une autorisation explicite.
+Le dépôt GitHub est public et le CRM est accessible en ligne : https://addictshoppeuse.github.io/crm-client/. Le dépôt ne contient aucune donnée réelle et son historique est propre depuis l'origine (un seul commit initial, rien d'importé).

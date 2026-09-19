@@ -8,7 +8,7 @@ Fonctions : tableau de bord et KPI cliquables, Aujourd'hui, prospects, pipeline 
 
 Les liens Google Agenda ouvrent un formulaire à enregistrer dans Google ; ils ne synchronisent pas automatiquement le calendrier.
 
-Le dépôt reste privé. GitHub Pages est désactivé avec la configuration actuelle du compte. Aucun historique Git n'a été réécrit : les anciennes versions nécessitent une purge séparée et explicitement autorisée.
+Le dépôt est public et servi par GitHub Pages : https://addictshoppeuse.github.io/crm-client/. Il a été créé à partir d'un unique commit propre, sans aucun historique importé : aucune version antérieure ni aucune donnée réelle n'y a jamais été poussée. Les données de prospection vivent uniquement dans Supabase (accès sur invitation) ou dans le navigateur en mode local.
 
 `app.js`, `styles.css` et `domain.mjs` sont des fichiers hérités ; le nouveau `index.html` utilise son propre code intégré.
 
