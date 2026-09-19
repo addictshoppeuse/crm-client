@@ -1294,7 +1294,7 @@ async function updateProspect(id, payload, { silent = false } = {}) {
     }
     persistDemo()
   } else {
-    const { error } = await state.supabase.from('prospects').update(payload).eq('id', id)
+    const { error } = await state.supabase.from('prospects').update(remotePayload(payload)).eq('id', id)
     if (error) throw error
     await loadRemote()
   }
@@ -1314,7 +1314,7 @@ async function createProspect(payload) {
     persistDemo()
   } else {
     const source_order = Math.max(0, ...state.prospects.map(p => Number(p.source_order) || 0)) + 1
-    const { data, error } = await state.supabase.from('prospects').insert({ ...payload, source_order }).select('*').single()
+    const { data, error } = await state.supabase.from('prospects').insert(remotePayload({ ...payload, source_order })).select('*').single()
     if (error) throw error
     state.selectedId = data.id
     await loadRemote()
@@ -1797,6 +1797,14 @@ function render() {
 function nullable(value) {
   const clean = String(value ?? '').trim()
   return clean ? clean : null
+}
+
+// Colonnes texte "not null default ''" côté Supabase : un champ vide doit partir en '', pas en null
+const REMOTE_TEXT_COLUMNS = ['contact_name', 'email', 'phone', 'notes', 'competitor']
+function remotePayload(payload) {
+  const clean = { ...payload }
+  for (const key of REMOTE_TEXT_COLUMNS) if (key in clean && clean[key] == null) clean[key] = ''
+  return clean
 }
 
 function prospectPayload(formData) {
