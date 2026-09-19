@@ -1186,7 +1186,7 @@ function subscribeToOrganization() {
             const active = await loadMembership()
             if (!active) { clearRealtime(); state.prospects = []; render(); return }
           }
-          await loadRemote(false); render()
+          await loadRemote(false); if (!userIsEditing()) render()
         } catch (error) { console.error(error) }
       }
     channel.on('postgres_changes', { event:'INSERT', schema:'public', table, filter:`organization_id=eq.${org}` }, handleChange)
@@ -1210,8 +1210,14 @@ async function loadRemote(resubscribe = true) {
   if (!state.selectedId || !state.prospects.some(p => p.id === state.selectedId)) state.selectedId = state.prospects[0]?.id || null
   if (resubscribe && !state.realtimeChannels.length) subscribeToOrganization()
 }
+function userIsEditing() {
+  const active = document.activeElement
+  return Boolean(state.editor) || Boolean(active && active.closest && active.closest('input, textarea, select, [contenteditable="true"]'))
+}
+
 async function refreshConnectedAccess() {
   if (state.backend !== 'supabase' || !state.session || document.hidden) return
+  if (userIsEditing()) return // ne jamais redessiner pendant une saisie : render() remplace tout le DOM
   try {
     const active = await loadMembership()
     if (!active) { clearRealtime(); state.prospects = []; render(); return }
