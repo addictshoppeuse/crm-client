@@ -1,0 +1,7 @@
+Dovozo clients
+
+Ouvrir index.html pour utiliser le CRM local. Le fichier démarre vide et conserve les données déjà stockées dans le navigateur sur la même adresse.
+
+Sauvegarder régulièrement depuis Paramètres > Export JSON. L'import est validé et demande une confirmation avant restauration.
+
+Le dépôt GitHub reste privé et Pages est actuellement désactivé. Les anciennes versions Git ne sont pas encore purgées ; cette opération attend une autorisation explicite.
