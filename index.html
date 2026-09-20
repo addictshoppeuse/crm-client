@@ -1419,7 +1419,7 @@ function authErrorMessage(error) {
   const text = raw.toLowerCase()
   if (text.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.'
   if (text.includes('email not confirmed')) return 'Votre adresse email n’a pas encore été confirmée : ouvrez le lien reçu par email.'
-  if (text.includes('rate limit') || text.includes('too many')) return 'Trop de tentatives : patientez quelques minutes avant de réessayer.'
+  if (text.includes('rate limit') || text.includes('too many') || text.includes('only request this after')) return 'Trop de tentatives : patientez quelques minutes avant de réessayer.'
   if (text.includes('failed to fetch') || text.includes('network')) return 'Connexion impossible : vérifiez votre accès internet.'
   return raw || 'Connexion impossible.'
 }
@@ -2158,7 +2158,7 @@ app.addEventListener('submit', async event => {
     } else if (formName === 'password-recovery') {
       const email = String(data.get('recovery_email') || '').trim()
       const result = await state.supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin + location.pathname })
-      if (result.error) throw result.error
+      if (result.error) throw new Error(authErrorMessage(result.error))
       toast('Un email de réinitialisation vient d’être envoyé.')
     } else if (formName === 'password-setup') {
       const password = String(data.get('password') || '')
