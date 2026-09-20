@@ -8,11 +8,13 @@ alter table public.user_preferences
 --    n'envoie que lorsqu'il est 10 h à Paris (heure d'été = 08:00 UTC, heure d'hiver = 09:00 UTC).
 --    Le secret partagé `digest_cron_secret` doit exister dans Vault (Project Settings → Vault)
 --    et être identique au secret `DIGEST_CRON_SECRET` de la fonction Edge.
-create extension if not exists pg_cron;
-create extension if not exists pg_net;
+create extension if not exists pg_cron with schema pg_catalog;
+grant usage on schema cron to postgres;
+grant all privileges on all tables in schema cron to postgres;
+create extension if not exists pg_net with schema extensions;
 
 create or replace function public.call_daily_digest()
-returns void language plpgsql security definer set search_path = public, net, vault as $$
+returns void language plpgsql security definer set search_path = public, extensions, net, vault as $$
 declare
   secret text;
 begin
