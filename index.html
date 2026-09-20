@@ -107,6 +107,14 @@ svg { display: block; }
 }
 .textarea-input { min-height:98px; resize:vertical; line-height:1.45; }
 .auth-message { border-radius:8px; padding:10px 12px; background:#fff4e1; border:1px solid #f6ddaf; color:#704613; font-size:13px; }
+.auth-brand img { border-radius:10px; background:#fff; padding:3px; box-sizing:border-box; }
+.auth-brand-copy { display:grid; line-height:1.1; }
+.auth-brand-title { color:#fff; font-size:20px; font-weight:800; letter-spacing:-.03em; }
+.auth-brand-sub { font-size:12px; font-weight:500; color:#b9b9b9; }
+.auth-divider { display:flex; align-items:center; gap:12px; margin:28px 0 14px; color:var(--muted); font-size:13px; font-weight:600; }
+.auth-divider::before, .auth-divider::after { content:""; flex:1; height:1px; background:var(--line-dark); }
+.auth-form-secondary { gap:12px; }
+.auth-form-secondary .btn { justify-content:center; }
 .auth-switch { margin-top:16px; border:0; background:transparent; color:#4a235a; padding:4px 0; font-weight:700; }
 
 /* Shared buttons */
@@ -388,10 +396,15 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
   .detail-actions { flex-wrap:wrap; }
   .detail-actions .btn:first-child { width:100%; flex-basis:100%; }
   .auth-page { grid-template-columns:1fr; }
-  .auth-visual { min-height:auto; padding:24px; }
-  .auth-copy { padding:30px 0; }
-  .auth-copy h1 { font-size:36px; }
+  .auth-visual { min-height:auto; padding:20px; gap:18px; }
+  .auth-brand { font-size:19px; }
+  .auth-brand img { width:36px; height:36px; }
+  .auth-copy { padding:0; }
+  .auth-copy h1 { font-size:26px; margin-bottom:8px; }
+  .auth-copy p { font-size:14px; line-height:1.45; }
+  .auth-palette { max-width:100%; }
   .auth-card-wrap { padding:28px 18px; }
+  .auth-card h2 { font-size:24px; }
 }
 
 
@@ -967,6 +980,7 @@ loadStatusColors()
 loadTheme()
 
 const app = document.querySelector('#app')
+const DOVOZO_LOGO = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAe1BMVEVBJ3xCJ39AJH5KMoNVQIlPOIZFK4FGLYFTPog0EHgtAHU4F3o+In1gTpCOg63BvNH///+dlLiSiLCWjbOwqcXPy9zz8vbd2uY6Gns7HHsiAHE3FHkyCnespcJdSo5lVJPs6vHk4uvGwtWmnr6Eead6baC3scpqWpaDd6Z7C6InAAABGUlEQVR4AWIgDBjxAqopALBJFkgMg0AUnXhYKF3iWN3uf8JCG0/+GPLWN5y0C0RxkqZZlsdxnmQEgIZLgB34EZ0EL0pR1U0rOrL0wKTyRKxl12kDAtECWyZJSwec+kdzRrxkcgF0/A+Eqb8Rf8vCPYBY6q/q6nzADgC3Qo7Xu94A5oH65zgk6AQbIMIWgp/AxcCnXAHRxbntC7n1MRZAjXjoKyUvd3+RFYDYqGAGVFvgZoJZiJJuAN4FsyRPbAN0/RhD6uNtysQr9A5o0UdYAVb3gLrsthrPwzi9g4Qtxi08oPr/N2KTzMfNOlX7IkFKSQnc1wvDzqX/x9fn8Sjut0vNYbVyWZxkTolf2pSA+U6ChGRPj6xHEAAAvcAbs83aTxgAAAAASUVORK5CYII='
 const CONFIG = window.CRM_CONFIG || {}
 const AUTH_SETUP_FLOW = /type=(invite|recovery)/.test(window.location.hash)
 function isSafeSupabaseConfig(config) {
@@ -1377,12 +1391,22 @@ async function loadTimeline(prospectId) {
   ].sort((a, b) => new Date(b.at) - new Date(a.at))
 }
 
+function authErrorMessage(error) {
+  const raw = String(error?.message || '')
+  const text = raw.toLowerCase()
+  if (text.includes('invalid login credentials')) return 'Email ou mot de passe incorrect.'
+  if (text.includes('email not confirmed')) return 'Votre adresse email n’a pas encore été confirmée : ouvrez le lien reçu par email.'
+  if (text.includes('rate limit') || text.includes('too many')) return 'Trop de tentatives : patientez quelques minutes avant de réessayer.'
+  if (text.includes('failed to fetch') || text.includes('network')) return 'Connexion impossible : vérifiez votre accès internet.'
+  return raw || 'Connexion impossible.'
+}
+
 function renderAuth() {
   const palette = STATUSES.map(status => `<span style="background:${STATUS_META[status].bg}"></span>`).join('')
   return `
     <main class="auth-page">
       <section class="auth-visual">
-        <div class="auth-brand"><img src="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2048%22%20role%3D%22img%22%20aria-label%3D%22CRM%20Prospection%22%3E%0A%20%20%3Cpath%20d%3D%22M23.6%2028.8C13.8%2027.9%209%2021.4%208.4%2012.2c9.1.4%2015.1%204.9%2015.2%2016.6Z%22%20fill%3D%22#b8cf35%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M25.1%2027.2C25.5%2015.4%2032.8%208.1%2041.7%206.8c.1%2010.6-4.6%2018.1-16.6%2020.4Z%22%20fill%3D%22#fff%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M24.3%2027.2c-.8%205.6-.8%209.7-.3%2014%22%20fill%3D%22none%22%20stroke%3D%22#8b9b2d%22%20stroke-width%3D%222.2%22%20stroke-linecap%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" alt="" /> CRM Prospection</div>
+        <div class="auth-brand"><img src="${DOVOZO_LOGO}" alt="" /><div class="auth-brand-copy"><span class="auth-brand-title">Dovozo clients</span><span class="auth-brand-sub">Suivi commercial</span></div></div>
         <div class="auth-copy"><h1>Votre prospection, enfin au même endroit.</h1><p>Pipeline partagé, relances, historique et suivi des prospects — avec les codes couleur de votre fichier Excel.</p></div>
         <div class="auth-palette" aria-hidden="true">${palette}</div>
       </section>
@@ -1396,9 +1420,10 @@ function renderAuth() {
             ${state.authMessage ? `<div class="auth-message">${esc(state.authMessage)}</div>` : ''}
             <button class="btn btn-dark" type="submit">Se connecter</button>
           </form>
-          <form class="auth-form" data-form="password-recovery">
-            <label class="field"><span>Email pour réinitialiser le mot de passe</span><input class="text-input" name="recovery_email" type="email" autocomplete="email" required placeholder="vous@entreprise.fr" /></label>
-            <button class="btn" type="submit">Mot de passe oublié</button>
+          <div class="auth-divider"><span>Mot de passe oublié ?</span></div>
+          <form class="auth-form auth-form-secondary" data-form="password-recovery">
+            <label class="field"><span>Votre email</span><input class="text-input" name="recovery_email" type="email" autocomplete="email" required placeholder="vous@entreprise.fr" /></label>
+            <button class="btn" type="submit">Recevoir un lien de réinitialisation</button>
           </form>
         </div>
       </section>
@@ -1644,7 +1669,7 @@ function renderAppShell() {
   const content = state.view === 'today' ? renderToday() : state.view === 'settings' ? renderSettings() : state.view === 'pipeline' ? renderPipeline() : state.view === 'reminders' ? renderReminders() : state.view === 'calendar' ? renderAgenda() : renderDashboard()
   return `<header class="app-topbar">
       <div class="top-brand">
-        <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAMAAABEpIrGAAAAe1BMVEVBJ3xCJ39AJH5KMoNVQIlPOIZFK4FGLYFTPog0EHgtAHU4F3o+In1gTpCOg63BvNH///+dlLiSiLCWjbOwqcXPy9zz8vbd2uY6Gns7HHsiAHE3FHkyCnespcJdSo5lVJPs6vHk4uvGwtWmnr6Eead6baC3scpqWpaDd6Z7C6InAAABGUlEQVR4AWIgDBjxAqopALBJFkgMg0AUnXhYKF3iWN3uf8JCG0/+GPLWN5y0C0RxkqZZlsdxnmQEgIZLgB34EZ0EL0pR1U0rOrL0wKTyRKxl12kDAtECWyZJSwec+kdzRrxkcgF0/A+Eqb8Rf8vCPYBY6q/q6nzADgC3Qo7Xu94A5oH65zgk6AQbIMIWgp/AxcCnXAHRxbntC7n1MRZAjXjoKyUvd3+RFYDYqGAGVFvgZoJZiJJuAN4FsyRPbAN0/RhD6uNtysQr9A5o0UdYAVb3gLrsthrPwzi9g4Qtxi08oPr/N2KTzMfNOlX7IkFKSQnc1wvDzqX/x9fn8Sjut0vNYbVyWZxkTolf2pSA+U6ChGRPj6xHEAAAvcAbs83aTxgAAAAASUVORK5CYII=" alt="Logo Dovozo" />
+        <img src="${DOVOZO_LOGO}" alt="Logo Dovozo" />
         <div class="brand-copy">
           <span class="brand-title">Dovozo clients</span>
           <span class="brand-subtitle">Suivi commercial</span>
@@ -2100,7 +2125,7 @@ app.addEventListener('submit', async event => {
       const email = String(data.get('email') || '')
       const password = String(data.get('password') || '')
       const result = await state.supabase.auth.signInWithPassword({ email, password })
-      if (result.error) state.authMessage = result.error.message
+      if (result.error) state.authMessage = authErrorMessage(result.error)
       render()
     } else if (formName === 'password-recovery') {
       const email = String(data.get('recovery_email') || '').trim()
