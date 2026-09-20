@@ -1641,7 +1641,7 @@ function renderPipeline() {
 }
 
 function addDaysIso(days, from = todayIso()) {
-  const d = new Date(from + 'T00:00:00')
+  const d = new Date(from + 'T12:00:00')
   d.setDate(d.getDate() + days)
   return d.toISOString().slice(0, 10)
 }
