@@ -207,7 +207,7 @@ svg { display: block; }
 .current-date { color:#515968; padding-top:4px; white-space:nowrap; }
 
 .kpi-scroller { overflow-x:auto; padding:0 4px 6px; margin:0 -4px 16px; scrollbar-width:thin; }
-.kpi-grid { display:grid; grid-template-columns:1.08fr repeat(8,minmax(135px,1fr)); gap:12px; min-width:1230px; }
+.kpi-grid { display:grid; grid-template-columns:minmax(150px,1.08fr) repeat(8,minmax(135px,1fr)); gap:12px; min-width:1330px; }
 .kpi-card {
   min-height:108px;
   border:1px solid var(--line);
@@ -358,6 +358,25 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
 .toast { background:#2d2d2d; color:#fff; padding:11px 14px; border-radius:9px; box-shadow:0 12px 35px rgba(0,0,0,.2); font-size:13px; max-width:360px; animation:toast-in .2s ease-out; }
 .toast.error { background:#8b2020; }
 @keyframes toast-in { from { transform:translateY(8px); opacity:0; } }
+/* Mobile : la fiche client s'ouvre en panneau plein écran, uniquement après un choix explicite */
+@media (max-width: 860px) {
+  .detail-panel { display:none; }
+  .detail-panel.detail-open {
+    display:block;
+    position:fixed; inset:0; z-index:60;
+    overflow:auto; -webkit-overflow-scrolling:touch;
+    border-radius:0; border:0; box-shadow:none;
+    padding:0 16px 32px;
+    animation:sheet-in .22s ease-out;
+  }
+  .detail-panel.detail-open .detail-head {
+    position:sticky; top:0; z-index:2;
+    margin:0 -16px 12px; padding:12px 16px;
+    background:var(--card); border-bottom:1px solid var(--line);
+  }
+  .detail-panel.detail-open .close-detail { width:40px; height:40px; font-size:26px; background:#f3f4f5; }
+}
+@keyframes sheet-in { from { transform:translateY(24px); opacity:0; } }
 
 @media (max-width: 1180px) {
   .workspace { grid-template-columns:1fr; }
@@ -1016,6 +1035,7 @@ const state = {
   sortDirection: 'asc',
   filterOpen: false,
   userMenuOpen: false,
+  detailOpen: false,
   searchExpanded: false,
   editor: null,
   timeline: [],
@@ -1513,7 +1533,7 @@ function renderDetailPanel(p=getSelected()) {
  if(!p)return `<aside class="panel detail-panel"><div class="detail-placeholder"><div><h3>Sélectionnez un prospect</h3><p>Cliquez sur une ligne pour consulter sa fiche.</p></div></div></aside>`;
  const email=(p.email||'').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
  const phone=String(p.phone||'').replace(/[^+\d]/g,'');
- return `<aside class="panel detail-panel"><div class="detail-head"><h2>Fiche client</h2><button class="close-detail" data-action="close-detail" aria-label="Fermer">×</button></div>
+ return `<aside class="panel detail-panel${state.detailOpen?' detail-open':''}"><div class="detail-head"><h2>Fiche client</h2><button class="close-detail" data-action="close-detail" aria-label="Fermer">×</button></div>
  <div class="detail-company"><div class="detail-logo">${esc(initials(p.company))}</div><div><h3>${esc(p.company)}</h3><p>${esc(p.contact_name||'Contact à compléter')}</p>${priorityBadge(p)} ${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</div></div>
  <section class="detail-section no-border"><h3>Coordonnées</h3><p>${email?`<a href="mailto:${attr(email)}">${esc(p.email)}</a>`:esc(p.email||'Email à compléter')}</p><p>${phone?`<a href="tel:${attr(phone)}">${esc(p.phone)}</a>`:'Téléphone à compléter'}</p><div class="quick-actions">${email?`<a class="btn" href="mailto:${attr(email)}">Email</a><button class="btn" data-action="copy-email">Copier email</button>`:''}${phone?`<a class="btn" href="tel:${attr(phone)}">Appeler</a>`:''}<button class="btn" data-action="mark-contacted">Marquer contacté</button><button class="btn" data-action="create-reminder">Créer une relance</button></div></section>
  <form class="detail-form detail-section" data-form="quick-save" data-id="${attr(p.id)}"><h3>Prochaines actions</h3>
@@ -1873,22 +1893,26 @@ app.addEventListener('click', async event => {
       state.userMenuOpen = false
       state.view = actionNode.dataset.view
       state.filterOpen = false
+      state.detailOpen = false
       render()
 
     } else if (action === 'select-prospect') {
       if (event.target.closest('[data-action="edit-prospect"]')) return
       state.selectedId = actionNode.dataset.id
+      state.detailOpen = true
       await loadTimeline(state.selectedId)
       render()
 
     } else if (action === 'pipeline-select') {
       state.selectedId = actionNode.dataset.id
+      state.detailOpen = true
       await loadTimeline(state.selectedId)
       state.view = 'dashboard'
       render()
 
     } else if (action === 'close-detail') {
       state.selectedId = null
+      state.detailOpen = false
       render()
 
     } else if (action === 'toggle-filter') {
@@ -1974,6 +1998,7 @@ app.addEventListener('click', async event => {
 
     } else if (action === 'calendar-open-prospect') {
       state.selectedId = actionNode.dataset.id
+      state.detailOpen = true
       await loadTimeline(state.selectedId)
       state.view = 'dashboard'
       render()
