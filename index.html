@@ -3,10 +3,15 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta name="theme-color" content="#2D2D2D" />
+<meta name="theme-color" content="#41277C" />
+<link rel="manifest" href="./manifest.webmanifest" />
+<link rel="icon" type="image/png" sizes="64x64" href="./icons/favicon.png" />
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="apple-mobile-web-app-title" content="Dovozo" />
 <meta name="description" content="CRM de prospection client partagé" />
 <title>Dovozo clients</title>
-<link rel="icon" href="data:image/svg+xml;charset=UTF-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2048%2048%22%20role%3D%22img%22%20aria-label%3D%22CRM%20Prospection%22%3E%0A%20%20%3Cpath%20d%3D%22M23.6%2028.8C13.8%2027.9%209%2021.4%208.4%2012.2c9.1.4%2015.1%204.9%2015.2%2016.6Z%22%20fill%3D%22#b8cf35%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M25.1%2027.2C25.5%2015.4%2032.8%208.1%2041.7%206.8c.1%2010.6-4.6%2018.1-16.6%2020.4Z%22%20fill%3D%22#fff%22%2F%3E%0A%20%20%3Cpath%20d%3D%22M24.3%2027.2c-.8%205.6-.8%209.7-.3%2014%22%20fill%3D%22none%22%20stroke%3D%22#8b9b2d%22%20stroke-width%3D%222.2%22%20stroke-linecap%3D%22round%22%2F%3E%0A%3C%2Fsvg%3E%0A" type="image/svg+xml" />
 <style>
 :root {
   --excel-dark: #2D2D2D;
@@ -1073,6 +1078,8 @@ const state = {
   userMenuOpen: false,
   detailOpen: false,
   expandedPanel: null,
+  installPrompt: null,
+  installed: window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true,
   searchExpanded: false,
   editor: null,
   timeline: [],
@@ -1448,6 +1455,14 @@ async function loadTimeline(prospectId) {
     ...activities.map(x => ({ id: `a-${x.id}`, at: x.happened_at, text: `${x.activity_type}${x.note ? ` — ${x.note}` : ''}` })),
     ...history.map(x => ({ id: `h-${x.id}`, at: x.changed_at, text: `Statut : ${statusLabel(x.from_status || 'création')} → ${statusLabel(x.to_status)}` })),
   ].sort((a, b) => new Date(b.at) - new Date(a.at))
+}
+
+function renderInstallCard() {
+  if (state.installed) return `<p class="muted install-note">Application installée sur cet appareil.</p>`
+  const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent)
+  if (state.installPrompt) return `<h3>Sur l’écran d’accueil</h3><p class="muted">Installez Dovozo clients comme une application : icône sur le bureau ou le téléphone, ouverture sans barre d’adresse.</p><button class="btn" data-action="install-app">Installer l’application</button>`
+  if (isIos) return `<h3>Sur l’écran d’accueil</h3><p class="muted">Sur iPhone / iPad : bouton Partager de Safari, puis « Sur l’écran d’accueil ».</p>`
+  return `<h3>Sur l’écran d’accueil</h3><p class="muted">Dans Chrome ou Edge : menu ⋮ (ou icône d’installation dans la barre d’adresse) → « Installer l’application ». Sur Android : menu ⋮ → « Ajouter à l’écran d’accueil ».</p>`
 }
 
 function panelClass(key) { return state.expandedPanel === key ? ' is-expanded' : '' }
@@ -1960,6 +1975,15 @@ app.addEventListener('click', async event => {
       state.view = 'dashboard'
       render()
 
+    } else if (action === 'install-app') {
+      const prompt = state.installPrompt
+      if (!prompt) return
+      state.installPrompt = null
+      await prompt.prompt()
+      const choice = await prompt.userChoice.catch(() => null)
+      if (choice?.outcome === 'accepted') { state.installed = true; toast('Application installée.') }
+      render()
+
     } else if (action === 'toggle-expand') {
       state.expandedPanel = state.expandedPanel === actionNode.dataset.panel ? null : actionNode.dataset.panel
       render()
@@ -2418,7 +2442,7 @@ function renderSettings() {
     ? '<label class="btn">Restaurer une sauvegarde<input type="file" accept=".json,application/json" data-import hidden /></label>' : ''
   const localTools = state.backend==='demo'
     ? '<label class="btn">Importer une sauvegarde<input type="file" accept=".json,application/json" data-import hidden /></label><button class="btn" data-action="restore-previous">Annuler la dernière restauration</button><button class="btn btn-danger" data-action="clear-data">Effacer les données locales</button>' : remoteRestore
-  return `<div class="settings-grid"><section class="panel settings-card"><h2>Apparence</h2><p class="muted">Thème personnel, couleurs de l’interface et codes HEX.</p><button class="btn btn-dark" data-action="open-colors">Personnaliser l’apparence</button><h3>Colonnes du pipeline</h3><p class="muted">Afficher, masquer et déplacer les colonnes.</p>${PIPELINE_PREFS.order.map((s,i)=>`<div class="pipeline-setting"><label><input type="checkbox" data-column="${attr(s)}"${checked(!PIPELINE_PREFS.hidden.includes(s))}/> ${esc(statusLabel(s))}</label><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="-1"${i===0?' disabled':''}>←</button><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="1"${i===PIPELINE_PREFS.order.length-1?' disabled':''}>→</button></div>`).join('')}</section>
+  return `<div class="settings-grid"><section class="panel settings-card"><h2>Apparence</h2><p class="muted">Thème personnel, couleurs de l’interface et codes HEX.</p><button class="btn btn-dark" data-action="open-colors">Personnaliser l’apparence</button>${renderInstallCard()}<h3>Colonnes du pipeline</h3><p class="muted">Afficher, masquer et déplacer les colonnes.</p>${PIPELINE_PREFS.order.map((s,i)=>`<div class="pipeline-setting"><label><input type="checkbox" data-column="${attr(s)}"${checked(!PIPELINE_PREFS.hidden.includes(s))}/> ${esc(statusLabel(s))}</label><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="-1"${i===0?' disabled':''}>←</button><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="1"${i===PIPELINE_PREFS.order.length-1?' disabled':''}>→</button></div>`).join('')}</section>
   <section class="panel settings-card"><h2>Statuts</h2><p class="muted">Les libellés partagés restent liés aux étapes métier.</p>${sharedSettings}</section>
   <section class="panel settings-card data-settings"><h2>Données et sauvegardes</h2><p>${state.prospects.length} prospects.</p><p class="muted">L’export contient les prospects et leur historique. La restauration remplace toutes les données partagées dans une seule opération et conserve d’abord une copie locale.</p><div class="settings-actions"><button class="btn btn-dark" data-action="export-json">Exporter JSON</button>${localTools}</div><p class="muted">Conservez les fichiers JSON dans un endroit privé, en dehors de GitHub.</p></section>${renderMembersCard()}</div>`
 }
@@ -2487,6 +2511,9 @@ app.addEventListener('click',async event=>{
 });
 document.addEventListener('keydown',event=>{if(event.key==='Escape'){const hadOverlay=state.editor||state.colorSettingsOpen||state.userMenuOpen||state.searchExpanded;state.editor=null;state.colorSettingsOpen=false;state.userMenuOpen=false;state.searchExpanded=false;if(!hadOverlay)state.expandedPanel=null;render();}});
 document.addEventListener('click',event=>{if(state.expandedPanel&&event.target===document.body){state.expandedPanel=null;render();}});
+window.addEventListener('beforeinstallprompt', event => { event.preventDefault(); state.installPrompt = event; if (state.view === 'settings') render() })
+window.addEventListener('appinstalled', () => { state.installed = true; state.installPrompt = null; if (state.view === 'settings') render() })
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('./sw.js').catch(() => {})
 window.addEventListener('focus', refreshConnectedAccess)
 document.addEventListener('visibilitychange', refreshConnectedAccess)
 setInterval(refreshConnectedAccess, 5000)
