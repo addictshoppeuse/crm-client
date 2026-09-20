@@ -377,6 +377,33 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
   .detail-panel.detail-open .close-detail { width:40px; height:40px; font-size:26px; background:#f3f4f5; }
 }
 @keyframes sheet-in { from { transform:translateY(24px); opacity:0; } }
+/* Agrandir une rubrique en plein écran (bouton ⤢ dans son en-tête, Échap ou ⤡ pour réduire) */
+.expand-btn { margin-left:auto; flex-shrink:0; }
+.list-toolbar .expand-btn { margin-left:0; }
+.calendar-actions .expand-btn { margin-left:0; }
+body.has-expanded { overflow:hidden; }
+body.has-expanded::after { content:""; position:fixed; inset:0; background:rgba(22,25,31,.45); z-index:69; }
+.panel.is-expanded {
+  position:fixed; inset:16px; z-index:70;
+  overflow:auto; -webkit-overflow-scrolling:touch;
+  box-shadow:0 30px 80px rgba(0,0,0,.35);
+  animation:sheet-in .2s ease-out;
+}
+.panel.is-expanded .list-toolbar, .panel.is-expanded .kanban-toolbar, .panel.is-expanded .calendar-toolbar, .panel.is-expanded .section-heading {
+  position:sticky; top:0; z-index:3; background:var(--card);
+}
+.panel.is-expanded .table-scroll { max-height:none; overflow:visible; }
+.panel.is-expanded .prospect-table { width:100%; }
+.panel.is-expanded .notes-preview, .panel.is-expanded .contact-sub { max-width:none; white-space:normal; overflow:visible; }
+.panel.is-expanded .prospect-table td { padding-top:8px; padding-bottom:8px; }
+.panel.is-expanded .kanban { min-width:0; grid-template-columns:repeat(auto-fit, minmax(230px, 1fr)); }
+.panel.is-expanded .kanban-card span { white-space:normal; }
+.panel.is-expanded .calendar-event strong, .panel.is-expanded .calendar-event span { white-space:normal; }
+.panel.is-expanded .calendar-day { min-height:max(116px, calc((100vh - 220px) / 6)); }
+.kanban-toolbar .expand-btn { order:9; }
+@media (max-width: 600px) {
+  .panel.is-expanded { inset:0; border-radius:0; }
+}
 /* Libellé court « Accueil » sur téléphone, pour éviter le retour à la ligne de « Tableau de bord » */
 .nav-label-short { display:none; }
 @media (max-width: 600px) {
@@ -1045,6 +1072,7 @@ const state = {
   filterOpen: false,
   userMenuOpen: false,
   detailOpen: false,
+  expandedPanel: null,
   searchExpanded: false,
   editor: null,
   timeline: [],
@@ -1074,6 +1102,8 @@ const SVG = {
   clock: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v6l4 2"/></svg>',
   users: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2"/><path d="M3 20c.6-4 2.5-6 6-6s5.4 2 6 6M15 15c3.3 0 5.3 1.6 6 5"/></svg>',
   filter: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16l-6 7v6l-4 2v-8z"/></svg>',
+  expand: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>',
+  collapse: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg>',
   plus: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
   mail: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m4 7 8 6 8-6"/></svg>',
   save: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h12l2 2v16H5z"/><path d="M8 3v6h8V3M8 17h8"/></svg>',
@@ -1420,6 +1450,12 @@ async function loadTimeline(prospectId) {
   ].sort((a, b) => new Date(b.at) - new Date(a.at))
 }
 
+function panelClass(key) { return state.expandedPanel === key ? ' is-expanded' : '' }
+function expandButton(key) {
+  const open = state.expandedPanel === key
+  return `<button class="btn btn-icon expand-btn" type="button" data-action="toggle-expand" data-panel="${key}" title="${open ? 'Réduire' : 'Agrandir en plein écran'}" aria-label="${open ? 'Réduire' : 'Agrandir en plein écran'}" aria-pressed="${open}">${open ? SVG.collapse : SVG.expand}</button>`
+}
+
 function authErrorMessage(error) {
   const raw = String(error?.message || '')
   const text = raw.toLowerCase()
@@ -1518,7 +1554,7 @@ function renderProspectRows(rows) {
 }
 
 function renderListPanel({ title = 'Liste des prospects', rows = getVisibleProspects() } = {}) {
-  return `<section class="panel list-panel">
+  return `<section class="panel list-panel${panelClass('list')}" data-panel="list">
     <div class="list-toolbar">
       <div class="list-title"><h2>${esc(title)}</h2><span class="result-pill">${rows.length} résultat${rows.length > 1 ? 's' : ''}</span></div>
       <div class="list-search-wrap">${SVG.search}<input class="list-search" data-search="list" value="${attr(state.query)}" placeholder="Rechercher une entreprise…" aria-label="Rechercher" /></div>
@@ -1527,6 +1563,7 @@ function renderListPanel({ title = 'Liste des prospects', rows = getVisibleProsp
         
       </div>
       <button class="btn btn-dark" type="button" data-action="add-prospect">${SVG.plus}<span class="desktop-label">Ajouter un prospect</span></button>
+      ${expandButton('list')}
     </div>
     ${state.filterOpen ? renderFilters() : ''}
     <div class="table-scroll">
@@ -1561,7 +1598,7 @@ function renderDashboard() {
 function renderPipeline() {
  const filtered=sortProspects(advancedFilter(filterProspects(state.prospects,state.query,state.statusFilter)),PIPELINE_PREFS.sort,PIPELINE_PREFS.direction),counts=countByStatus(filtered);
  const columns=PIPELINE_PREFS.order.filter(s=>!PIPELINE_PREFS.hidden.includes(s));
- return `${renderKpis()}<section class="panel kanban-panel"><div class="kanban-toolbar"><div><h2>Pipeline commercial</h2><p class="muted">${filtered.length} prospects · ${columns.length} colonnes affichées</p></div><div class="quick-actions"><select class="select-input pipeline-sort" data-pipeline-sort="sort" aria-label="Tri du pipeline">${[['company','Entreprise'],['priority','Priorité'],['reminder_date','Prochaine relance'],['next_meeting','Rendez-vous'],['updated_at','Dernière modification']].map(([v,l])=>`<option value="${v}"${selected(v,PIPELINE_PREFS.sort)}>${l}</option>`).join('')}</select><select class="select-input pipeline-sort" data-pipeline-sort="direction" aria-label="Sens du tri"><option value="asc"${selected('asc',PIPELINE_PREFS.direction)}>Croissant</option><option value="desc"${selected('desc',PIPELINE_PREFS.direction)}>Décroissant</option></select><button class="btn" data-action="toggle-filter">Filtres</button><button class="btn" data-action="nav" data-view="settings">Colonnes</button><button class="btn btn-dark" data-action="add-prospect">Ajouter un prospect</button></div></div>${state.filterOpen?renderFilters():''}<div class="kanban-scroll"><div class="kanban" style="grid-template-columns:repeat(${Math.max(1,columns.length)},minmax(235px,1fr))">${columns.map(s=>`<section class="kanban-column"><div class="kanban-column-head" style="${statusStyle(s)}"><span>${esc(statusLabel(s))}</span><span>${counts[s]}</span></div>${filtered.filter(p=>p.status===s).map(p=>`<button class="kanban-card${overdueProspect(p)?' is-overdue':''}" data-action="pipeline-select" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}</span>${priorityBadge(p)}<span>Relance : ${formatDateFr(nextReminderDate(p))}</span>${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</button>`).join('')||'<p class="empty-table">Aucun prospect</p>'}</section>`).join('')||'<p class="empty-table">Toutes les colonnes sont masquées. Retrouvez-les dans Paramètres.</p>'}</div></div></section>`;
+ return `${renderKpis()}<section class="panel kanban-panel${panelClass('pipeline')}" data-panel="pipeline"><div class="kanban-toolbar"><div><h2>Pipeline commercial</h2><p class="muted">${filtered.length} prospects · ${columns.length} colonnes affichées</p></div>${expandButton('pipeline')}<div class="quick-actions"><select class="select-input pipeline-sort" data-pipeline-sort="sort" aria-label="Tri du pipeline">${[['company','Entreprise'],['priority','Priorité'],['reminder_date','Prochaine relance'],['next_meeting','Rendez-vous'],['updated_at','Dernière modification']].map(([v,l])=>`<option value="${v}"${selected(v,PIPELINE_PREFS.sort)}>${l}</option>`).join('')}</select><select class="select-input pipeline-sort" data-pipeline-sort="direction" aria-label="Sens du tri"><option value="asc"${selected('asc',PIPELINE_PREFS.direction)}>Croissant</option><option value="desc"${selected('desc',PIPELINE_PREFS.direction)}>Décroissant</option></select><button class="btn" data-action="toggle-filter">Filtres</button><button class="btn" data-action="nav" data-view="settings">Colonnes</button><button class="btn btn-dark" data-action="add-prospect">Ajouter un prospect</button></div></div>${state.filterOpen?renderFilters():''}<div class="kanban-scroll"><div class="kanban" style="grid-template-columns:repeat(${Math.max(1,columns.length)},minmax(235px,1fr))">${columns.map(s=>`<section class="kanban-column"><div class="kanban-column-head" style="${statusStyle(s)}"><span>${esc(statusLabel(s))}</span><span>${counts[s]}</span></div>${filtered.filter(p=>p.status===s).map(p=>`<button class="kanban-card${overdueProspect(p)?' is-overdue':''}" data-action="pipeline-select" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}</span>${priorityBadge(p)}<span>Relance : ${formatDateFr(nextReminderDate(p))}</span>${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</button>`).join('')||'<p class="empty-table">Aucun prospect</p>'}</section>`).join('')||'<p class="empty-table">Toutes les colonnes sont masquées. Retrouvez-les dans Paramètres.</p>'}</div></div></section>`;
 }
 
 function renderReminders() {
@@ -1674,10 +1711,11 @@ function renderAgenda() {
       <div class="mini-card"><span>Cette semaine</span><strong>${weekCount}</strong></div>
       <div class="mini-card"><span>Relances en retard</span><strong class="overdue">${overdue}</strong></div>
     </section>
-    <section class="panel calendar-panel">
+    <section class="panel calendar-panel${panelClass('calendar')}" data-panel="calendar">
       <div class="calendar-toolbar">
         <h2>${esc(heading)}</h2>
         <div class="calendar-actions">
+          ${expandButton('calendar')}
           <button class="btn" type="button" data-action="calendar-prev">←</button>
           <button class="btn" type="button" data-action="calendar-today">Aujourd’hui</button>
           <button class="btn" type="button" data-action="calendar-next">→</button>
@@ -1846,6 +1884,7 @@ function render() {
   else if (state.backend === 'supabase' && state.authSetup) app.innerHTML = renderPasswordSetup()
   else if (state.backend === 'supabase' && !state.membership) app.innerHTML = renderAccessBlocked()
   else app.innerHTML = renderAppShell()
+  document.body.classList.toggle('has-expanded', Boolean(state.expandedPanel))
 }
 
 function nullable(value) {
@@ -1903,12 +1942,14 @@ app.addEventListener('click', async event => {
       state.view = actionNode.dataset.view
       state.filterOpen = false
       state.detailOpen = false
+      state.expandedPanel = null
       render()
 
     } else if (action === 'select-prospect') {
       if (event.target.closest('[data-action="edit-prospect"]')) return
       state.selectedId = actionNode.dataset.id
       state.detailOpen = true
+      if (state.expandedPanel === 'list') state.editor = { id: state.selectedId }
       await loadTimeline(state.selectedId)
       render()
 
@@ -1917,6 +1958,10 @@ app.addEventListener('click', async event => {
       state.detailOpen = true
       await loadTimeline(state.selectedId)
       state.view = 'dashboard'
+      render()
+
+    } else if (action === 'toggle-expand') {
+      state.expandedPanel = state.expandedPanel === actionNode.dataset.panel ? null : actionNode.dataset.panel
       render()
 
     } else if (action === 'close-detail') {
@@ -2354,7 +2399,7 @@ function clearFilters() { state.statusFilter='Tous';state.priorityFilter='';stat
 function renderToday() {
  const today=todayIso(), rows=getVisibleProspects().filter(activeProspect);
  const sections=[['Relances du jour',rows.filter(p=>nextReminderDate(p)===today)],['Appels et rendez-vous du jour',rows.filter(p=>p.next_meeting===today)],['Éléments en retard',rows.filter(overdueProspect)]];
- return `<section class="panel today-panel"><div class="section-heading"><div><h2>Aujourd’hui</h2><p class="muted">Vos actions prévues et celles à rattraper.</p></div><button class="btn" data-action="toggle-filter">Filtres</button></div>${state.filterOpen?renderFilters():''}<div class="today-grid">${sections.map(([title,items])=>`<section><h3>${title} <span class="result-pill">${items.length}</span></h3>${items.map(p=>`<button class="today-card${overdueProspect(p)?' is-overdue':''}" data-action="calendar-open-prospect" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}</span><span>${priorityBadge(p)} · ${esc(statusLabel(p.status))}</span><small>Relance : ${formatDateFr(nextReminderDate(p))} · RDV : ${formatDateFr(p.next_meeting)}</small></button>`).join('')||'<p class="empty-table">Aucune action.</p>'}</section>`).join('')}</div></section>`;
+ return `<section class="panel today-panel${panelClass('today')}" data-panel="today"><div class="section-heading"><div><h2>Aujourd’hui</h2><p class="muted">Vos actions prévues et celles à rattraper.</p></div>${expandButton('today')}<button class="btn" data-action="toggle-filter">Filtres</button></div>${state.filterOpen?renderFilters():''}<div class="today-grid">${sections.map(([title,items])=>`<section><h3>${title} <span class="result-pill">${items.length}</span></h3>${items.map(p=>`<button class="today-card${overdueProspect(p)?' is-overdue':''}" data-action="calendar-open-prospect" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}</span><span>${priorityBadge(p)} · ${esc(statusLabel(p.status))}</span><small>Relance : ${formatDateFr(nextReminderDate(p))} · RDV : ${formatDateFr(p.next_meeting)}</small></button>`).join('')||'<p class="empty-table">Aucune action.</p>'}</section>`).join('')}</div></section>`;
 }
 function renderMetrics() {
  const active=state.prospects.filter(activeProspect), won=state.prospects.filter(p=>p.status==='Gagné').length,closed=state.prospects.filter(p=>['Gagné','Perdu'].includes(p.status)).length;
@@ -2440,7 +2485,8 @@ app.addEventListener('click',async event=>{
   else if(a==='meeting-calendar'){const p=getSelected();if(!p?.next_meeting)throw new Error('Renseignez d’abord la date du rendez-vous.');window.open(googleCalendarUrl(p,p.next_meeting,'Rendez-vous'),'_blank','noopener');}
  }catch(error){console.error(error);toast(error.message||'Action impossible.',true);}
 });
-document.addEventListener('keydown',event=>{if(event.key==='Escape'){state.editor=null;state.colorSettingsOpen=false;state.userMenuOpen=false;state.searchExpanded=false;render();}});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'){const hadOverlay=state.editor||state.colorSettingsOpen||state.userMenuOpen||state.searchExpanded;state.editor=null;state.colorSettingsOpen=false;state.userMenuOpen=false;state.searchExpanded=false;if(!hadOverlay)state.expandedPanel=null;render();}});
+document.addEventListener('click',event=>{if(state.expandedPanel&&event.target===document.body){state.expandedPanel=null;render();}});
 window.addEventListener('focus', refreshConnectedAccess)
 document.addEventListener('visibilitychange', refreshConnectedAccess)
 setInterval(refreshConnectedAccess, 5000)
