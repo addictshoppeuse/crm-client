@@ -382,6 +382,22 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
   .detail-panel.detail-open .close-detail { width:40px; height:40px; font-size:26px; background:#f3f4f5; }
 }
 @keyframes sheet-in { from { transform:translateY(24px); opacity:0; } }
+/* Rattrapage des relances en retard (vue Relances) */
+.catchup-bar { display:flex; align-items:flex-end; gap:18px; padding:16px 18px; margin-bottom:16px; border-left:4px solid #c54438; }
+.catchup-copy { flex:0 1 300px; }
+.catchup-form { flex:1 1 auto; }
+.catchup-copy strong { display:block; font-size:16px; margin-bottom:4px; }
+.catchup-copy p { margin:0; font-size:13px; }
+.catchup-form { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; }
+.catchup-form .field { min-width:170px; flex:0 0 auto; }
+.catchup-form .btn-dark { margin-left:auto; }
+.catchup-presets { display:flex; gap:6px; }
+.catchup-presets .btn { padding:0 10px; min-height:42px; }
+@media (max-width: 860px) {
+  .catchup-bar { flex-direction:column; align-items:stretch; gap:12px; }
+  .catchup-copy { flex:0 0 auto; }
+  .catchup-form .btn-dark { width:100%; justify-content:center; }
+}
 /* Agrandir une rubrique en plein écran (bouton ⤢ dans son en-tête, Échap ou ⤡ pour réduire) */
 .expand-btn { margin-left:auto; flex-shrink:0; }
 .list-toolbar .expand-btn { margin-left:0; }
@@ -1616,13 +1632,54 @@ function renderPipeline() {
  return `${renderKpis()}<section class="panel kanban-panel${panelClass('pipeline')}" data-panel="pipeline"><div class="kanban-toolbar"><div><h2>Pipeline commercial</h2><p class="muted">${filtered.length} prospects · ${columns.length} colonnes affichées</p></div>${expandButton('pipeline')}<div class="quick-actions"><select class="select-input pipeline-sort" data-pipeline-sort="sort" aria-label="Tri du pipeline">${[['company','Entreprise'],['priority','Priorité'],['reminder_date','Prochaine relance'],['next_meeting','Rendez-vous'],['updated_at','Dernière modification']].map(([v,l])=>`<option value="${v}"${selected(v,PIPELINE_PREFS.sort)}>${l}</option>`).join('')}</select><select class="select-input pipeline-sort" data-pipeline-sort="direction" aria-label="Sens du tri"><option value="asc"${selected('asc',PIPELINE_PREFS.direction)}>Croissant</option><option value="desc"${selected('desc',PIPELINE_PREFS.direction)}>Décroissant</option></select><button class="btn" data-action="toggle-filter">Filtres</button><button class="btn" data-action="nav" data-view="settings">Colonnes</button><button class="btn btn-dark" data-action="add-prospect">Ajouter un prospect</button></div></div>${state.filterOpen?renderFilters():''}<div class="kanban-scroll"><div class="kanban" style="grid-template-columns:repeat(${Math.max(1,columns.length)},minmax(235px,1fr))">${columns.map(s=>`<section class="kanban-column"><div class="kanban-column-head" style="${statusStyle(s)}"><span>${esc(statusLabel(s))}</span><span>${counts[s]}</span></div>${filtered.filter(p=>p.status===s).map(p=>`<button class="kanban-card${overdueProspect(p)?' is-overdue':''}" data-action="pipeline-select" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}</span>${priorityBadge(p)}<span>Relance : ${formatDateFr(nextReminderDate(p))}</span>${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</button>`).join('')||'<p class="empty-table">Aucun prospect</p>'}</section>`).join('')||'<p class="empty-table">Toutes les colonnes sont masquées. Retrouvez-les dans Paramètres.</p>'}</div></div></section>`;
 }
 
+function addDaysIso(days, from = todayIso()) {
+  const d = new Date(from + 'T00:00:00')
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
+}
+
+function renderCatchupBar(overdueRows) {
+  if (!overdueRows.length || !can('edit')) return ''
+  const n = overdueRows.length
+  return `<section class="panel catchup-bar">
+    <div class="catchup-copy"><strong>${n} relance${n > 1 ? 's' : ''} en retard</strong><p class="muted">Reportez-les en une seule fois pour repartir à jour. Chaque fiche garde une trace du report dans son historique.</p></div>
+    <form class="catchup-form" data-form="catchup">
+      <label class="field"><span>Nouvelle date de relance</span><input class="text-input" type="date" name="date" value="${addDaysIso(7)}" min="${todayIso()}" required /></label>
+      <div class="catchup-presets" role="group" aria-label="Raccourcis"><button type="button" class="btn" data-action="catchup-preset" data-days="3">+3 j</button><button type="button" class="btn" data-action="catchup-preset" data-days="7">+7 j</button><button type="button" class="btn" data-action="catchup-preset" data-days="14">+14 j</button><button type="button" class="btn" data-action="catchup-preset" data-days="30">+30 j</button></div>
+      <button class="btn btn-dark" type="submit">Reporter ${n > 1 ? `les ${n} relances` : 'la relance'}</button>
+    </form>
+  </section>`
+}
+
+async function rescheduleOverdue(ids, date) {
+  const targets = state.prospects.filter(p => ids.includes(p.id))
+  if (!targets.length) return
+  const note = `Relance reportée au ${formatDateFr(date)} (rattrapage des retards)`
+  if (state.backend === 'demo') {
+    for (const p of targets) {
+      await updateProspect(p.id, p.reminder_date ? { reminder_date: date } : { followup_date: date }, { silent: true })
+      state.demoActivities.unshift({ id: makeId(), prospect_id: p.id, user_id: 'demo-user', activity_type: 'Report', note, happened_at: new Date().toISOString() })
+    }
+    persistDemo()
+  } else {
+    const byReminder = targets.filter(p => p.reminder_date).map(p => p.id)
+    const byFollowup = targets.filter(p => !p.reminder_date).map(p => p.id)
+    if (byReminder.length) { const { error } = await state.supabase.from('prospects').update({ reminder_date: date }).in('id', byReminder); if (error) throw error }
+    if (byFollowup.length) { const { error } = await state.supabase.from('prospects').update({ followup_date: date }).in('id', byFollowup); if (error) throw error }
+    const { error: actError } = await state.supabase.from('activities').insert(targets.map(p => ({ prospect_id: p.id, activity_type: 'Report', note })))
+    if (actError) throw actError
+    await loadRemote()
+  }
+  if (state.selectedId && ids.includes(state.selectedId)) await loadTimeline(state.selectedId)
+}
+
 function renderReminders() {
   const today = todayIso()
   const due = getDueReminders(getVisibleProspects(), today)
   const overdue = due.filter(p => nextReminderDate(p) < today).length
   const todayCount = due.filter(p => nextReminderDate(p) === today).length
   const rows = sortProspects(due, 'reminder_date', 'asc')
-  return `<section class="reminder-summary"><div class="mini-card"><span>À traiter</span><strong>${due.length}</strong></div><div class="mini-card"><span>En retard</span><strong class="overdue">${overdue}</strong></div><div class="mini-card"><span>Aujourd’hui</span><strong class="today">${todayCount}</strong></div></section><div class="workspace">${renderListPanel({ title: 'Relances à traiter', rows })}${renderDetailPanel()}</div>`
+  return `<section class="reminder-summary"><div class="mini-card"><span>À traiter</span><strong>${due.length}</strong></div><div class="mini-card"><span>En retard</span><strong class="overdue">${overdue}</strong></div><div class="mini-card"><span>Aujourd’hui</span><strong class="today">${todayCount}</strong></div></section>${renderCatchupBar(due.filter(p => nextReminderDate(p) < today))}<div class="workspace">${renderListPanel({ title: 'Relances à traiter', rows })}${renderDetailPanel()}</div>`
 }
 
 
@@ -1984,6 +2041,10 @@ app.addEventListener('click', async event => {
       if (choice?.outcome === 'accepted') { state.installed = true; toast('Application installée.') }
       render()
 
+    } else if (action === 'catchup-preset') {
+      const input = actionNode.closest('form')?.querySelector('input[name="date"]')
+      if (input) input.value = addDaysIso(Number(actionNode.dataset.days))
+      return
     } else if (action === 'toggle-expand') {
       state.expandedPanel = state.expandedPanel === actionNode.dataset.panel ? null : actionNode.dataset.panel
       render()
@@ -2246,6 +2307,17 @@ app.addEventListener('submit', async event => {
       history.replaceState(null, '', location.pathname)
       if (await loadMembership()) await loadRemote()
       render(); toast('Mot de passe enregistré.')
+    } else if (formName === 'catchup') {
+      requirePermission('edit')
+      const date = String(data.get('date') || '')
+      const today = todayIso()
+      if (!date || date < today) throw new Error('Choisissez une date à partir d’aujourd’hui.')
+      const ids = getDueReminders(getVisibleProspects(), today).filter(p => nextReminderDate(p) < today).map(p => p.id)
+      if (!ids.length) throw new Error('Aucune relance en retard.')
+      if (!confirm(`Reporter ${ids.length} relance${ids.length > 1 ? 's' : ''} en retard au ${formatDateFr(date)} ?`)) return
+      await rescheduleOverdue(ids, date)
+      render()
+      toast(`${ids.length} relance${ids.length > 1 ? 's reportées' : ' reportée'} au ${formatDateFr(date)}.`)
     } else if (formName === 'quick-save') {
       const id = form.dataset.id
       await updateProspect(id, {
