@@ -1,15 +1,16 @@
 // Rappel quotidien par email : relances du jour et en retard, envoyé à chaque membre actif
-// (sauf ceux qui ont désactivé le rappel dans Paramètres) via l'API Brevo.
+// (sauf ceux qui ont désactivé le rappel dans Paramètres) via Gmail (SMTP + mot de passe d'application).
 // Déclenchée par pg_cron (voir migration 202609200005) avec l'en-tête `x-digest-secret`.
 // À déployer sans vérification de JWT : `supabase functions deploy daily-digest --no-verify-jwt`.
 //
 // Secrets attendus (Edge Functions → Secrets) :
 //   DIGEST_CRON_SECRET  — même valeur que `digest_cron_secret` dans Vault
-//   BREVO_API_KEY       — clé API Brevo (xkeysib-…)
-//   DIGEST_FROM_EMAIL   — adresse d'expédition validée dans Brevo
+//   GMAIL_USER          — adresse Gmail d'expédition (ex. addictshoppeuse@gmail.com)
+//   GMAIL_APP_PASSWORD  — mot de passe d'application Google (16 caractères), jamais le mot de passe du compte
 //   DIGEST_FROM_NAME    — optionnel, défaut « Dovozo clients »
 //   CRM_URL             — optionnel, défaut https://addictshoppeuse.github.io/crm-client/
 import { createClient } from 'npm:@supabase/supabase-js@2.116.0'
+import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts'
 import { json } from '../_shared/authorization.ts'
 
 const TIME_ZONE = 'Europe/Paris'
@@ -86,13 +87,20 @@ function buildEmail(name: string, today: string, dueToday: Prospect[], overdue: 
   return { subject, html, text }
 }
 
-async function sendBrevo(apiKey: string, from: { email: string; name: string }, to: { email: string; name: string }, message: { subject: string; html: string; text: string }) {
-  const response = await fetch('https://api.brevo.com/v3/smtp/email', {
-    method: 'POST',
-    headers: { 'api-key': apiKey, 'Content-Type': 'application/json', Accept: 'application/json' },
-    body: JSON.stringify({ sender: from, to: [to], subject: message.subject, htmlContent: message.html, textContent: message.text }),
+function makeMailer(user: string, password: string) {
+  return new SMTPClient({
+    connection: { hostname: 'smtp.gmail.com', port: 465, tls: true, auth: { username: user, password } },
   })
-  if (!response.ok) throw new Error(`Brevo ${response.status}: ${(await response.text()).slice(0, 300)}`)
+}
+
+async function sendGmail(client: SMTPClient, from: { email: string; name: string }, to: { email: string; name: string }, message: { subject: string; html: string; text: string }) {
+  await client.send({
+    from: `${from.name} <${from.email}>`,
+    to: to.name ? `${to.name} <${to.email}>` : to.email,
+    subject: message.subject,
+    content: message.text,
+    html: message.html,
+  })
 }
 
 Deno.serve(async req => {
@@ -107,11 +115,12 @@ Deno.serve(async req => {
 
   const url = Deno.env.get('SUPABASE_URL')
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')
-  const brevoKey = Deno.env.get('BREVO_API_KEY')
-  const fromEmail = Deno.env.get('DIGEST_FROM_EMAIL')
+  const gmailUser = Deno.env.get('GMAIL_USER')
+  const gmailPassword = Deno.env.get('GMAIL_APP_PASSWORD')
   if (!url || !serviceKey) return json({ error: 'Server configuration unavailable' }, 500)
-  if (!body.dryRun && (!brevoKey || !fromEmail)) return json({ error: 'BREVO_API_KEY ou DIGEST_FROM_EMAIL manquant' }, 500)
-  const from = { email: fromEmail || 'noreply@example.com', name: Deno.env.get('DIGEST_FROM_NAME') || 'Dovozo clients' }
+  if (!body.dryRun && (!gmailUser || !gmailPassword)) return json({ error: 'GMAIL_USER ou GMAIL_APP_PASSWORD manquant' }, 500)
+  const from = { email: gmailUser || 'noreply@example.com', name: Deno.env.get('DIGEST_FROM_NAME') || 'Dovozo clients' }
+  const mailer = body.dryRun ? null : makeMailer(gmailUser!, gmailPassword!)
   const crmUrl = Deno.env.get('CRM_URL') || 'https://addictshoppeuse.github.io/crm-client/'
 
   const admin = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } })
@@ -151,12 +160,13 @@ Deno.serve(async req => {
     const message = buildEmail(member.display_name, today, dueToday, overdue, meetings, crmUrl)
     if (body.dryRun) { results.push({ email, status: `simulation : ${message.subject}` }); continue }
     try {
-      await sendBrevo(brevoKey!, from, { email, name: member.display_name || email }, message)
+      await sendGmail(mailer!, from, { email, name: member.display_name || '' }, message)
       results.push({ email, status: 'envoyé' })
     } catch (error) {
       console.error('daily-digest', email, error)
       results.push({ email, status: 'échec' })
     }
   }
+  if (mailer) await mailer.close().catch(() => {})
   return json({ date: today, hour, sent: results.filter(r => r.status === 'envoyé').length, results })
 })
