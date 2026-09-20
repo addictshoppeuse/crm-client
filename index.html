@@ -414,11 +414,14 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
   .list-toolbar .btn .desktop-label { display:none; }
   .detail-actions { flex-wrap:wrap; }
   .detail-actions .btn:first-child { width:100%; flex-basis:100%; }
+}
+/* Connexion : une seule colonne dès que l'écran est trop étroit pour deux (tablette, téléphone) */
+@media (max-width: 900px) {
   .auth-page { grid-template-columns:1fr; }
   .auth-visual { min-height:auto; padding:20px; gap:18px; }
   .auth-brand { font-size:19px; }
   .auth-brand img { width:36px; height:36px; }
-  .auth-copy { padding:0; }
+  .auth-copy { padding:0; max-width:none; }
   .auth-copy h1 { font-size:26px; margin-bottom:8px; }
   .auth-copy p { font-size:14px; line-height:1.45; }
   .auth-palette { max-width:100%; }
