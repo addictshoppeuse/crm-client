@@ -1096,6 +1096,7 @@ const state = {
   detailOpen: false,
   expandedPanel: null,
   dailyDigest: true,
+  calendarToken: null,
   digestLoadedFor: null,
   installPrompt: null,
   installed: window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true,
@@ -1244,7 +1245,8 @@ async function loadMembership() {
   if (members.error) throw members.error
   state.members = members.data || []
   if (state.digestLoadedFor !== state.session.user.id) {
-    const prefs = await state.supabase.from('user_preferences').select('daily_digest').eq('user_id', state.session.user.id).eq('organization_id', data.organization_id).maybeSingle()
+    const prefs = await state.supabase.from('user_preferences').select('daily_digest,calendar_token').eq('user_id', state.session.user.id).eq('organization_id', data.organization_id).maybeSingle()
+    state.calendarToken = prefs.data?.calendar_token || null
     state.dailyDigest = prefs.error || !prefs.data ? true : prefs.data.daily_digest !== false
     state.digestLoadedFor = state.session.user.id
   }
@@ -2053,6 +2055,15 @@ app.addEventListener('click', async event => {
       const input = actionNode.closest('form')?.querySelector('input[name="date"]')
       if (input) input.value = addDaysIso(Number(actionNode.dataset.days))
       return
+    } else if (action === 'rotate-feed-token') {
+      if (state.calendarToken && !confirm('Régénérer le lien ? L’ancien lien cessera de fonctionner dans vos agendas.')) return
+      await rotateCalendarToken()
+      render()
+      toast('Lien d’abonnement prêt.')
+
+    } else if (action === 'copy-feed-url') {
+      try { await navigator.clipboard.writeText(calendarFeedUrl()); toast('Lien copié.') } catch { document.querySelector('[data-feed-url]')?.select(); toast('Sélectionnez le lien et copiez-le (Ctrl+C).') }
+
     } else if (action === 'toggle-expand') {
       state.expandedPanel = state.expandedPanel === actionNode.dataset.panel ? null : actionNode.dataset.panel
       render()
@@ -2524,6 +2535,30 @@ async function saveDailyDigest(enabled) {
   state.dailyDigest = enabled
 }
 
+function calendarFeedUrl() {
+  return state.calendarToken ? `${CONFIG.supabaseUrl}/functions/v1/calendar-feed?token=${encodeURIComponent(state.calendarToken)}` : ''
+}
+function renderCalendarFeedCard() {
+  if (state.backend !== 'supabase') return ''
+  const url = calendarFeedUrl()
+  const googleUrl = url ? `https://calendar.google.com/calendar/u/0/r?cid=${encodeURIComponent(url.replace(/^https:/, 'webcal:'))}` : ''
+  return `<section class="panel settings-card"><h2>Mon agenda (Google, iPhone, Outlook)</h2>
+  <p class="muted">Abonnez votre agenda au CRM : relances, rendez-vous et fins de contrat y apparaissent automatiquement (sens unique CRM → agenda, mis à jour par Google toutes les quelques heures).</p>
+  ${url ? `<label class="field"><span>Votre lien d’abonnement personnel</span><input class="text-input" readonly value="${attr(url)}" data-feed-url="1" onclick="this.select()" /></label>
+    <div class="settings-actions"><a class="btn btn-dark" href="${attr(googleUrl)}" target="_blank" rel="noopener">Ajouter à Google Agenda</a><button class="btn" type="button" data-action="copy-feed-url">Copier le lien</button><button class="btn" type="button" data-action="rotate-feed-token">Régénérer (révoque l’ancien lien)</button></div>
+    <p class="muted">Google Agenda : « Ajouter à Google Agenda » puis confirmer ; ou Autres agendas → + → « À partir de l’URL » et coller le lien. iPhone : Réglages → Calendrier → Comptes → Ajouter un abonnement. Ce lien vaut mot de passe : ne le partagez pas.</p>`
+  : `<button class="btn btn-dark" type="button" data-action="rotate-feed-token">Créer mon lien d’abonnement</button>`}
+  </section>`
+}
+async function rotateCalendarToken() {
+  const bytes = new Uint8Array(32); crypto.getRandomValues(bytes)
+  const token = Array.from(bytes, b => 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'[b % 62]).join('')
+  const { error } = await state.supabase.from('user_preferences')
+    .upsert({ organization_id: state.membership.organization_id, user_id: state.session.user.id, calendar_token: token }, { onConflict: 'organization_id,user_id' })
+  if (error) throw error
+  state.calendarToken = token
+}
+
 function renderMembersCard() {
   if (!can('members')) return ''
   return `<section class="panel settings-card data-settings"><h2>Membres de l’équipe</h2><p class="muted">Invitez vos collaborateurs. Une désactivation coupe les nouvelles requêtes immédiatement et ferme leur écran au prochain contrôle, sous quelques secondes.</p><form class="form-grid" data-form="invite-member"><label class="field"><span>Nom professionnel</span><input class="text-input" name="invite_display_name" maxlength="120" required /></label><label class="field"><span>Email professionnel</span><input class="text-input" name="invite_email" type="email" maxlength="254" required /></label><div class="span-2"><button class="btn btn-dark" type="submit">Inviter comme collaborateur</button></div></form><div class="activity-history">${state.members.map(m=>`<article><div class="history-heading"><strong>${esc(m.display_name||m.email||'Membre')}</strong><span class="priority-badge">${esc(m.role==='admin'?'Administrateur':'Collaborateur')}</span></div><p>${esc(m.email||'')} · ${esc(m.state==='active'?'Actif':'Désactivé')}</p>${m.user_id===state.session?.user?.id?'':`<div class="settings-actions"><button class="btn" data-action="manage-member" data-id="${attr(m.id)}" data-member-action="${m.state==='active'?'disable':'enable'}">${m.state==='active'?'Désactiver':'Réactiver'}</button><button class="btn" data-action="manage-member" data-id="${attr(m.id)}" data-member-action="set-role" data-member-role="${m.role==='admin'?'collaborator':'admin'}">${m.role==='admin'?'Passer collaborateur':'Passer administrateur'}</button></div>`}</article>`).join('')}</div></section>`
@@ -2538,7 +2573,7 @@ function renderSettings() {
     ? '<label class="btn">Importer une sauvegarde<input type="file" accept=".json,application/json" data-import hidden /></label><button class="btn" data-action="restore-previous">Annuler la dernière restauration</button><button class="btn btn-danger" data-action="clear-data">Effacer les données locales</button>' : remoteRestore
   return `<div class="settings-grid"><section class="panel settings-card"><h2>Apparence</h2><p class="muted">Thème personnel, couleurs de l’interface et codes HEX.</p><button class="btn btn-dark" data-action="open-colors">Personnaliser l’apparence</button>${renderInstallCard()}<h3>Colonnes du pipeline</h3><p class="muted">Afficher, masquer et déplacer les colonnes.</p>${PIPELINE_PREFS.order.map((s,i)=>`<div class="pipeline-setting"><label><input type="checkbox" data-column="${attr(s)}"${checked(!PIPELINE_PREFS.hidden.includes(s))}/> ${esc(statusLabel(s))}</label><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="-1"${i===0?' disabled':''}>←</button><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="1"${i===PIPELINE_PREFS.order.length-1?' disabled':''}>→</button></div>`).join('')}</section>
   <section class="panel settings-card"><h2>Statuts</h2><p class="muted">Les libellés partagés restent liés aux étapes métier.</p>${sharedSettings}</section>
-  <section class="panel settings-card data-settings"><h2>Données et sauvegardes</h2><p>${state.prospects.length} prospects.</p><p class="muted">L’export contient les prospects et leur historique. La restauration remplace toutes les données partagées dans une seule opération et conserve d’abord une copie locale.</p><div class="settings-actions"><button class="btn btn-dark" data-action="export-json">Exporter JSON</button>${localTools}</div><p class="muted">Conservez les fichiers JSON dans un endroit privé, en dehors de GitHub.</p></section>${renderDigestCard()}${renderMembersCard()}</div>`
+  <section class="panel settings-card data-settings"><h2>Données et sauvegardes</h2><p>${state.prospects.length} prospects.</p><p class="muted">L’export contient les prospects et leur historique. La restauration remplace toutes les données partagées dans une seule opération et conserve d’abord une copie locale.</p><div class="settings-actions"><button class="btn btn-dark" data-action="export-json">Exporter JSON</button>${localTools}</div><p class="muted">Conservez les fichiers JSON dans un endroit privé, en dehors de GitHub.</p></section>${renderDigestCard()}${renderCalendarFeedCard()}${renderMembersCard()}</div>`
 }
 
 app.addEventListener('input',event=>{
