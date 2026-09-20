@@ -382,6 +382,7 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
   .detail-panel.detail-open .close-detail { width:40px; height:40px; font-size:26px; background:#f3f4f5; }
 }
 @keyframes sheet-in { from { transform:translateY(24px); opacity:0; } }
+.toggle-row { display:flex; align-items:center; gap:10px; margin-top:10px; font-weight:600; cursor:pointer; }.toggle-row input { width:18px; height:18px; accent-color:#41277C; }
 /* Rattrapage des relances en retard (vue Relances) */
 .catchup-bar { display:flex; align-items:flex-end; gap:18px; padding:16px 18px; margin-bottom:16px; border-left:4px solid #c54438; }
 .catchup-copy { flex:0 1 300px; }
@@ -1094,6 +1095,8 @@ const state = {
   userMenuOpen: false,
   detailOpen: false,
   expandedPanel: null,
+  dailyDigest: true,
+  digestLoadedFor: null,
   installPrompt: null,
   installed: window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true,
   searchExpanded: false,
@@ -1240,6 +1243,11 @@ async function loadMembership() {
     .eq('organization_id', data.organization_id).order('display_name')
   if (members.error) throw members.error
   state.members = members.data || []
+  if (state.digestLoadedFor !== state.session.user.id) {
+    const prefs = await state.supabase.from('user_preferences').select('daily_digest').eq('user_id', state.session.user.id).eq('organization_id', data.organization_id).maybeSingle()
+    state.dailyDigest = prefs.error || !prefs.data ? true : prefs.data.daily_digest !== false
+    state.digestLoadedFor = state.session.user.id
+  }
   state.profiles = state.members.filter(x => x.state === 'active').map(x => ({ id:x.user_id, full_name:x.display_name, role:x.role }))
   return true
 }
@@ -2502,6 +2510,20 @@ function renderMetrics() {
  const month=todayIso().slice(0,7), added=state.prospects.filter(p=>String(p.created_at||'').startsWith(month)).length;
  return `<section class="useful-metrics">${[[active.filter(overdueProspect).length,'Prospects en retard','overdue'],[active.filter(p=>p.next_meeting===todayIso()).length,'Appels / RDV aujourd’hui','today'],[active.filter(p=>!nextReminderDate(p)&&!p.next_meeting).length,'Sans prochaine action','none']].map(([n,l,f])=>`<button class="mini-card" data-action="metric-filter" data-date="${f}"><span>${l}</span><strong>${n}</strong></button>`).join('')}<div class="mini-card"><span>Gagnés / dossiers clôturés</span><strong>${closed?Math.round(100*won/closed)+' %':'—'}</strong><small>${won} gagnés sur ${closed} clôturés</small></div><div class="mini-card"><span>Créés ce mois</span><strong>${added}</strong><small>D’après les dates de création enregistrées</small></div></section>`;
 }
+function renderDigestCard() {
+  if (state.backend !== 'supabase') return ''
+  const on = state.dailyDigest !== false
+  return `<section class="panel settings-card"><h2>Rappel quotidien</h2><p class="muted">Chaque matin à 10 h, un email récapitule vos relances du jour, vos appels / rendez-vous et les retards.</p>
+  <label class="toggle-row"><input type="checkbox" data-digest="1" ${on ? 'checked' : ''} /> <span>Recevoir le rappel par email${state.membership?.email ? ` (${esc(state.membership.email)})` : ''}</span></label></section>`
+}
+
+async function saveDailyDigest(enabled) {
+  const { error } = await state.supabase.from('user_preferences')
+    .upsert({ organization_id: state.membership.organization_id, user_id: state.session.user.id, daily_digest: enabled }, { onConflict: 'organization_id,user_id' })
+  if (error) throw error
+  state.dailyDigest = enabled
+}
+
 function renderMembersCard() {
   if (!can('members')) return ''
   return `<section class="panel settings-card data-settings"><h2>Membres de l’équipe</h2><p class="muted">Invitez vos collaborateurs. Une désactivation coupe les nouvelles requêtes immédiatement et ferme leur écran au prochain contrôle, sous quelques secondes.</p><form class="form-grid" data-form="invite-member"><label class="field"><span>Nom professionnel</span><input class="text-input" name="invite_display_name" maxlength="120" required /></label><label class="field"><span>Email professionnel</span><input class="text-input" name="invite_email" type="email" maxlength="254" required /></label><div class="span-2"><button class="btn btn-dark" type="submit">Inviter comme collaborateur</button></div></form><div class="activity-history">${state.members.map(m=>`<article><div class="history-heading"><strong>${esc(m.display_name||m.email||'Membre')}</strong><span class="priority-badge">${esc(m.role==='admin'?'Administrateur':'Collaborateur')}</span></div><p>${esc(m.email||'')} · ${esc(m.state==='active'?'Actif':'Désactivé')}</p>${m.user_id===state.session?.user?.id?'':`<div class="settings-actions"><button class="btn" data-action="manage-member" data-id="${attr(m.id)}" data-member-action="${m.state==='active'?'disable':'enable'}">${m.state==='active'?'Désactiver':'Réactiver'}</button><button class="btn" data-action="manage-member" data-id="${attr(m.id)}" data-member-action="set-role" data-member-role="${m.role==='admin'?'collaborator':'admin'}">${m.role==='admin'?'Passer collaborateur':'Passer administrateur'}</button></div>`}</article>`).join('')}</div></section>`
@@ -2516,7 +2538,7 @@ function renderSettings() {
     ? '<label class="btn">Importer une sauvegarde<input type="file" accept=".json,application/json" data-import hidden /></label><button class="btn" data-action="restore-previous">Annuler la dernière restauration</button><button class="btn btn-danger" data-action="clear-data">Effacer les données locales</button>' : remoteRestore
   return `<div class="settings-grid"><section class="panel settings-card"><h2>Apparence</h2><p class="muted">Thème personnel, couleurs de l’interface et codes HEX.</p><button class="btn btn-dark" data-action="open-colors">Personnaliser l’apparence</button>${renderInstallCard()}<h3>Colonnes du pipeline</h3><p class="muted">Afficher, masquer et déplacer les colonnes.</p>${PIPELINE_PREFS.order.map((s,i)=>`<div class="pipeline-setting"><label><input type="checkbox" data-column="${attr(s)}"${checked(!PIPELINE_PREFS.hidden.includes(s))}/> ${esc(statusLabel(s))}</label><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="-1"${i===0?' disabled':''}>←</button><button class="btn" data-action="column-move" data-status="${attr(s)}" data-delta="1"${i===PIPELINE_PREFS.order.length-1?' disabled':''}>→</button></div>`).join('')}</section>
   <section class="panel settings-card"><h2>Statuts</h2><p class="muted">Les libellés partagés restent liés aux étapes métier.</p>${sharedSettings}</section>
-  <section class="panel settings-card data-settings"><h2>Données et sauvegardes</h2><p>${state.prospects.length} prospects.</p><p class="muted">L’export contient les prospects et leur historique. La restauration remplace toutes les données partagées dans une seule opération et conserve d’abord une copie locale.</p><div class="settings-actions"><button class="btn btn-dark" data-action="export-json">Exporter JSON</button>${localTools}</div><p class="muted">Conservez les fichiers JSON dans un endroit privé, en dehors de GitHub.</p></section>${renderMembersCard()}</div>`
+  <section class="panel settings-card data-settings"><h2>Données et sauvegardes</h2><p>${state.prospects.length} prospects.</p><p class="muted">L’export contient les prospects et leur historique. La restauration remplace toutes les données partagées dans une seule opération et conserve d’abord une copie locale.</p><div class="settings-actions"><button class="btn btn-dark" data-action="export-json">Exporter JSON</button>${localTools}</div><p class="muted">Conservez les fichiers JSON dans un endroit privé, en dehors de GitHub.</p></section>${renderDigestCard()}${renderMembersCard()}</div>`
 }
 
 app.addEventListener('input',event=>{
@@ -2532,6 +2554,7 @@ app.addEventListener('change',async event=>{
   if(input.dataset.change==='status-filter') {state.statusFilter=input.value;render();}
   else if(input.dataset.change==='quick-status') {await updateProspect(input.dataset.id,{status:input.value});await loadTimeline(input.dataset.id);render();}
   else if(input.dataset.advanced) {state[input.dataset.advanced]=input.value;render();}
+  else if(input.dataset.digest) {await saveDailyDigest(input.checked);toast(input.checked?'Rappel quotidien activé.':'Rappel quotidien désactivé.');}
   else if(input.dataset.pipelineSort) {PIPELINE_PREFS[input.dataset.pipelineSort]=input.value;localStorage.setItem('dovozo-pipeline',JSON.stringify(PIPELINE_PREFS));if(state.backend==='supabase'&&can('settings'))await saveSharedSettings();render();}
   else if(input.dataset.column) {const s=input.dataset.column;PIPELINE_PREFS.hidden=input.checked?PIPELINE_PREFS.hidden.filter(x=>x!==s):[...new Set([...PIPELINE_PREFS.hidden,s])];localStorage.setItem('dovozo-pipeline',JSON.stringify(PIPELINE_PREFS));if(state.backend==='supabase'&&can('settings'))await saveSharedSettings();render();}
   else if(input.hasAttribute('data-import')) {
