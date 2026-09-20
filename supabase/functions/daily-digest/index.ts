@@ -167,6 +167,6 @@ Deno.serve(async req => {
       results.push({ email, status: 'échec' })
     }
   }
-  if (mailer) await mailer.close().catch(() => {})
+  if (mailer) { try { await mailer.close() } catch (_) { /* connexion déjà fermée */ } }
   return json({ date: today, hour, sent: results.filter(r => r.status === 'envoyé').length, results })
 })
