@@ -98,6 +98,6 @@ Deno.serve(async req => {
     ...events, 'END:VCALENDAR', '',
   ].join('\r\n')
   return new Response(body, {
-    headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="dovozo-clients.ics"', 'Cache-Control': 'private, max-age=300' },
+    headers: { 'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="dovozo-clients.ics"', 'Cache-Control': 'private, max-age=300', 'Access-Control-Allow-Origin': '*' },
   })
 })
