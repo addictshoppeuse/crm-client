@@ -14,7 +14,11 @@ type Prospect = {
 }
 
 function icsText(value: string) {
-  return String(value || '').replace(/\/g, '\\').replace(/\r?\n/g, '\n').replace(/[;,]/g, m => '\' + m)
+  const backslash = String.fromCharCode(92)
+  return String(value || '')
+    .split(backslash).join(backslash + backslash)
+    .replace(/\r?\n/g, backslash + 'n')
+    .replace(/[;,]/g, m => backslash + m)
 }
 function fold(line: string) {
   const out: string[] = []
