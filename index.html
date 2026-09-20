@@ -2546,8 +2546,8 @@ function renderCalendarFeedCard() {
   return `<section class="panel settings-card"><h2>Mon agenda (Google, iPhone, Outlook)</h2>
   <p class="muted">Abonnez votre agenda au CRM : relances, rendez-vous et fins de contrat y apparaissent automatiquement (sens unique CRM → agenda, mis à jour par Google toutes les quelques heures).</p>
   ${url ? `<label class="field"><span>Votre lien d’abonnement personnel</span><input class="text-input" readonly value="${attr(url)}" data-feed-url="1" onclick="this.select()" /></label>
-    <div class="settings-actions"><a class="btn btn-dark" href="${attr(googleUrl)}" target="_blank" rel="noopener">Ajouter à Google Agenda</a><button class="btn" type="button" data-action="copy-feed-url">Copier le lien</button><button class="btn" type="button" data-action="rotate-feed-token">Régénérer (révoque l’ancien lien)</button></div>
-    <p class="muted">Google Agenda : « Ajouter à Google Agenda » puis confirmer ; ou Autres agendas → + → « À partir de l’URL » et coller le lien. iPhone : Réglages → Calendrier → Comptes → Ajouter un abonnement. Ce lien vaut mot de passe : ne le partagez pas.</p>`
+    <div class="settings-actions"><button class="btn btn-dark" type="button" data-action="copy-feed-url">Copier le lien</button><a class="btn" href="${attr(googleUrl)}" target="_blank" rel="noopener">Essayer l’ajout automatique</a><button class="btn" type="button" data-action="rotate-feed-token">Régénérer (révoque l’ancien lien)</button></div>
+    <p class="muted"><strong>Google Agenda (sur ordinateur)</strong> : copiez le lien, puis dans Google Agenda : « Autres agendas » → + → « À partir de l’URL » → collez → « Ajouter l’agenda ». Il apparaît ensuite aussi sur le téléphone (à cocher dans l’appli). L’ajout automatique est parfois ignoré par Google. <strong>iPhone</strong> : Réglages → Calendrier → Comptes → Ajouter un abonnement. Ce lien vaut mot de passe : ne le partagez pas.</p>`
   : `<button class="btn btn-dark" type="button" data-action="rotate-feed-token">Créer mon lien d’abonnement</button>`}
   </section>`
 }
