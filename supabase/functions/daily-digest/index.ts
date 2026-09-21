@@ -22,6 +22,7 @@ type Prospect = {
   organization_id: string
   company: string
   contact_name: string
+  contact_role: string
   status: string
   priority: string
   reminder_date: string | null
@@ -55,7 +56,7 @@ function nextReminder(p: Prospect) {
 
 function buildEmail(name: string, today: string, dueToday: Prospect[], overdue: Prospect[], meetings: Prospect[], crmUrl: string) {
   const line = (p: Prospect, date: string | null) =>
-    `<li style="margin:0 0 6px"><strong>${escapeHtml(p.company)}</strong>${p.contact_name ? ` — ${escapeHtml(p.contact_name)}` : ''}${date ? ` <span style="color:#6b7280">(${formatFr(date)})</span>` : ''}</li>`
+    `<li style="margin:0 0 6px"><strong>${escapeHtml(p.company)}</strong>${p.contact_name ? ` — ${escapeHtml(p.contact_name)}${p.contact_role ? ', ' + escapeHtml(p.contact_role) : ''}` : ''}${date ? ` <span style="color:#6b7280">(${formatFr(date)})</span>` : ''}</li>`
   const section = (title: string, color: string, items: string[]) =>
     items.length ? `<h3 style="margin:22px 0 8px;font-size:15px;color:${color}">${title} (${items.length})</h3><ul style="margin:0;padding-left:18px">${items.join('')}</ul>` : ''
   const nothing = !dueToday.length && !overdue.length && !meetings.length
@@ -127,7 +128,7 @@ Deno.serve(async req => {
   const today = parisDate(new Date())!
   const [members, prospects, preferences] = await Promise.all([
     admin.from('memberships').select('user_id,organization_id,display_name,email,state').eq('state', 'active'),
-    admin.from('prospects').select('id,organization_id,company,contact_name,status,priority,reminder_date,followup_date,next_meeting'),
+    admin.from('prospects').select('id,organization_id,company,contact_name,contact_role,status,priority,reminder_date,followup_date,next_meeting'),
     admin.from('user_preferences').select('user_id,organization_id,daily_digest'),
   ])
   if (members.error) throw members.error

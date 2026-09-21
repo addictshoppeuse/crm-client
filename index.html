@@ -280,6 +280,8 @@ button.kpi-card.active-filter { outline:3px solid rgba(45,45,45,.16); outline-of
 .company-lockup { display:flex; align-items:center; gap:9px; }
 .company-mark { width:30px; height:30px; border-radius:8px; background:#f4f4f5; color:#4a235a; display:grid; place-items:center; font-size:12px; font-weight:800; flex:0 0 auto; }
 .contact-main { display:block; color:#222630; }
+.contact-role { display:block; color:#4d5665; font-size:12px; margin-top:1px; }
+.detail-role { color:var(--muted); }
 .contact-sub { display:block; color:var(--muted); font-size:11px; margin-top:2px; max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .status-chip { display:inline-flex; align-items:center; justify-content:center; min-height:30px; border-radius:8px; padding:5px 10px; font-size:12px; font-weight:750; white-space:nowrap; }
 .notes-preview { display:block; max-width:190px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -991,7 +993,7 @@ function filterProspects(prospects, query = '', status = 'Tous') {
  return prospects.filter(p=>{
   if(status!=='Tous'&&p.status!==status)return false;
   const h=historyItems(p.id).map(x=>`${x.title} ${x.text}`).join(' ');
-  const text=fold([p.company,p.contact_name,p.email,p.phone,p.notes,p.competitor,p.status,statusLabel(p.status),priorityValue(p.priority),h].filter(Boolean).join(' '));
+  const text=fold([p.company,p.contact_name,p.contact_role,p.email,p.phone,p.notes,p.competitor,p.status,statusLabel(p.status),priorityValue(p.priority),h].filter(Boolean).join(' '));
   return !q||text.includes(q);
  });
 }
@@ -1293,7 +1295,9 @@ function subscribeToOrganization() {
             const active = await loadMembership()
             if (!active) { clearRealtime(); state.prospects = []; render(); return }
           }
-          await loadRemote(false); if (!userIsEditing()) render()
+          const before = remoteFingerprint()
+          await loadRemote(false)
+          if (!userIsEditing() && remoteFingerprint() !== before) render()
         } catch (error) { console.error(error) }
       }
     channel.on('postgres_changes', { event:'INSERT', schema:'public', table, filter:`organization_id=eq.${org}` }, handleChange)
@@ -1326,9 +1330,11 @@ async function refreshConnectedAccess() {
   if (state.backend !== 'supabase' || !state.session || document.hidden) return
   if (userIsEditing()) return // ne jamais redessiner pendant une saisie : render() remplace tout le DOM
   try {
+    const before = remoteFingerprint()
     const active = await loadMembership()
     if (!active) { clearRealtime(); state.prospects = []; render(); return }
-    await loadRemote(false); render()
+    await loadRemote(false)
+    if (remoteFingerprint() !== before) render()
   } catch (error) {
     console.error(error)
     clearRealtime(); state.membership = null; state.prospects = []; state.accessReason = 'Votre accès doit être vérifié à nouveau.'; render()
@@ -1584,7 +1590,7 @@ function renderProspectRows(rows) {
     return `<tr class="${isSelected ? 'selected' : ''} ${overdueProspect(prospect) ? 'is-overdue' : ''}" data-action="select-prospect" data-id="${attr(prospect.id)}">
       <td class="checkbox-cell"><span class="fake-check" aria-hidden="true"></span></td>
       <td class="company-cell"><div class="company-lockup"><span class="company-mark">${esc(initials(prospect.company))}</span><span>${esc(prospect.company)}</span></div>${priorityBadge(prospect)} ${overdueProspect(prospect) ? '<span class="late-badge">En retard</span>' : ''}</td>
-      <td><span class="contact-main">${esc(prospect.contact_name || 'Contact à compléter')}</span><span class="contact-sub">${esc(email)}</span></td>
+      <td><span class="contact-main">${esc(prospect.contact_name || 'Contact à compléter')}</span>${prospect.contact_role ? `<span class="contact-role">${esc(prospect.contact_role)}</span>` : ''}<span class="contact-sub">${esc(email)}</span></td>
       <td><span class="status-chip" style="${statusStyle(prospect.status)}">${esc(statusLabel(prospect.status))}</span></td>
       <td>${formatDateFr(prospect.contact_date)}</td>
       <td>${formatDateFr(prospect.followup_date)}</td>
@@ -1622,7 +1628,7 @@ function renderDetailPanel(p=getSelected()) {
  const email=(p.email||'').match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)?.[0];
  const phone=String(p.phone||'').replace(/[^+\d]/g,'');
  return `<aside class="panel detail-panel${state.detailOpen?' detail-open':''}"><div class="detail-head"><h2>Fiche client</h2><button class="close-detail" data-action="close-detail" aria-label="Fermer">×</button></div>
- <div class="detail-company"><div class="detail-logo">${esc(initials(p.company))}</div><div><h3>${esc(p.company)}</h3><p>${esc(p.contact_name||'Contact à compléter')}</p>${priorityBadge(p)} ${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</div></div>
+ <div class="detail-company"><div class="detail-logo">${esc(initials(p.company))}</div><div><h3>${esc(p.company)}</h3><p>${esc(p.contact_name||'Contact à compléter')}${p.contact_role?` · <span class="detail-role">${esc(p.contact_role)}</span>`:''}</p>${priorityBadge(p)} ${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</div></div>
  <section class="detail-section no-border"><h3>Coordonnées</h3><p>${email?`<a href="mailto:${attr(email)}">${esc(p.email)}</a>`:esc(p.email||'Email à compléter')}</p><p>${phone?`<a href="tel:${attr(phone)}">${esc(p.phone)}</a>`:'Téléphone à compléter'}</p><div class="quick-actions">${email?`<a class="btn" href="mailto:${attr(email)}">Email</a><button class="btn" data-action="copy-email">Copier email</button>`:''}${phone?`<a class="btn" href="tel:${attr(phone)}">Appeler</a>`:''}<button class="btn" data-action="mark-contacted">Marquer contacté</button><button class="btn" data-action="create-reminder">Créer une relance</button></div></section>
  <form class="detail-form detail-section" data-form="quick-save" data-id="${attr(p.id)}"><h3>Prochaines actions</h3>
  <label class="field"><span>Statut</span><select class="select-input" name="status" data-change="quick-status" data-id="${attr(p.id)}" style="${statusStyle(p.status)}">${statusOptions(p.status)}</select></label>
@@ -1640,7 +1646,7 @@ function renderDashboard() {
 function renderPipeline() {
  const filtered=sortProspects(advancedFilter(filterProspects(state.prospects,state.query,state.statusFilter)),PIPELINE_PREFS.sort,PIPELINE_PREFS.direction),counts=countByStatus(filtered);
  const columns=PIPELINE_PREFS.order.filter(s=>!PIPELINE_PREFS.hidden.includes(s));
- return `${renderKpis()}<section class="panel kanban-panel${panelClass('pipeline')}" data-panel="pipeline"><div class="kanban-toolbar"><div><h2>Pipeline commercial</h2><p class="muted">${filtered.length} prospects · ${columns.length} colonnes affichées</p></div>${expandButton('pipeline')}<div class="quick-actions"><select class="select-input pipeline-sort" data-pipeline-sort="sort" aria-label="Tri du pipeline">${[['company','Entreprise'],['priority','Priorité'],['reminder_date','Prochaine relance'],['next_meeting','Rendez-vous'],['updated_at','Dernière modification']].map(([v,l])=>`<option value="${v}"${selected(v,PIPELINE_PREFS.sort)}>${l}</option>`).join('')}</select><select class="select-input pipeline-sort" data-pipeline-sort="direction" aria-label="Sens du tri"><option value="asc"${selected('asc',PIPELINE_PREFS.direction)}>Croissant</option><option value="desc"${selected('desc',PIPELINE_PREFS.direction)}>Décroissant</option></select><button class="btn" data-action="toggle-filter">Filtres</button><button class="btn" data-action="nav" data-view="settings">Colonnes</button><button class="btn btn-dark" data-action="add-prospect">Ajouter un prospect</button></div></div>${state.filterOpen?renderFilters():''}<div class="kanban-scroll"><div class="kanban" style="grid-template-columns:repeat(${Math.max(1,columns.length)},minmax(235px,1fr))">${columns.map(s=>`<section class="kanban-column"><div class="kanban-column-head" style="${statusStyle(s)}"><span>${esc(statusLabel(s))}</span><span>${counts[s]}</span></div>${filtered.filter(p=>p.status===s).map(p=>`<button class="kanban-card${overdueProspect(p)?' is-overdue':''}" data-action="pipeline-select" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}</span>${priorityBadge(p)}<span>Relance : ${formatDateFr(nextReminderDate(p))}</span>${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</button>`).join('')||'<p class="empty-table">Aucun prospect</p>'}</section>`).join('')||'<p class="empty-table">Toutes les colonnes sont masquées. Retrouvez-les dans Paramètres.</p>'}</div></div></section>`;
+ return `${renderKpis()}<section class="panel kanban-panel${panelClass('pipeline')}" data-panel="pipeline"><div class="kanban-toolbar"><div><h2>Pipeline commercial</h2><p class="muted">${filtered.length} prospects · ${columns.length} colonnes affichées</p></div>${expandButton('pipeline')}<div class="quick-actions"><select class="select-input pipeline-sort" data-pipeline-sort="sort" aria-label="Tri du pipeline">${[['company','Entreprise'],['priority','Priorité'],['reminder_date','Prochaine relance'],['next_meeting','Rendez-vous'],['updated_at','Dernière modification']].map(([v,l])=>`<option value="${v}"${selected(v,PIPELINE_PREFS.sort)}>${l}</option>`).join('')}</select><select class="select-input pipeline-sort" data-pipeline-sort="direction" aria-label="Sens du tri"><option value="asc"${selected('asc',PIPELINE_PREFS.direction)}>Croissant</option><option value="desc"${selected('desc',PIPELINE_PREFS.direction)}>Décroissant</option></select><button class="btn" data-action="toggle-filter">Filtres</button><button class="btn" data-action="nav" data-view="settings">Colonnes</button><button class="btn btn-dark" data-action="add-prospect">Ajouter un prospect</button></div></div>${state.filterOpen?renderFilters():''}<div class="kanban-scroll"><div class="kanban" style="grid-template-columns:repeat(${Math.max(1,columns.length)},minmax(235px,1fr))">${columns.map(s=>`<section class="kanban-column"><div class="kanban-column-head" style="${statusStyle(s)}"><span>${esc(statusLabel(s))}</span><span>${counts[s]}</span></div>${filtered.filter(p=>p.status===s).map(p=>`<button class="kanban-card${overdueProspect(p)?' is-overdue':''}" data-action="pipeline-select" data-id="${attr(p.id)}"><strong>${esc(p.company)}</strong><span>${esc(p.contact_name||'Contact à compléter')}${p.contact_role?' · '+esc(p.contact_role):''}</span>${priorityBadge(p)}<span>Relance : ${formatDateFr(nextReminderDate(p))}</span>${overdueProspect(p)?'<span class="late-badge">En retard</span>':''}</button>`).join('')||'<p class="empty-table">Aucun prospect</p>'}</section>`).join('')||'<p class="empty-table">Toutes les colonnes sont masquées. Retrouvez-les dans Paramètres.</p>'}</div></div></section>`;
 }
 
 function addDaysIso(days, from = todayIso()) {
@@ -1924,7 +1930,7 @@ function renderEditor() {
   const p = editorProspect()
   const creating = !p
   const values = p || {
-    company: '', contact_name: '', email: '', status: 'Identifié', owner_id: '',
+    company: '', contact_name: '', contact_role: '', email: '', status: 'Identifié', owner_id: '',
     contact_date: '', followup_date: '', next_meeting: '', competitor: '', contract_end: '', reminder_date: '', priority: 'Normale', notes: '',
   }
   return `<div class="modal-layer" data-action="modal-backdrop">
@@ -1934,7 +1940,8 @@ function renderEditor() {
         <form data-form="editor" data-id="${creating ? '' : attr(p.id)}">
           <div class="form-grid">
             <label class="field span-2"><span>Entreprise</span><input class="text-input" name="company" value="${attr(values.company)}" required /></label>
-            <label class="field"><span>Contact</span><input class="text-input" name="contact_name" value="${attr(values.contact_name || '')}" /></label>
+            <label class="field"><span>Contact</span><input class="text-input" name="contact_name" value="${attr(values.contact_name || '')}" placeholder="Prénom Nom" /></label>
+            <label class="field"><span>Fonction</span><input class="text-input" name="contact_role" value="${attr(values.contact_role || '')}" placeholder="Ex. Directrice commerciale" maxlength="120" /></label>
             <label class="field"><span>Email</span><input class="text-input" name="email" value="${attr(values.email || '')}" /></label>
             <label class="field"><span>Téléphone</span><input class="text-input" name="phone" type="tel" value="${attr(values.phone || '')}" /></label><label class="field"><span>Statut</span><select class="select-input" name="status">${statusOptions(values.status)}</select></label>
             <label class="field"><span>Responsable</span><select class="select-input" name="owner_id">${profileOptions(values.owner_id)}</select></label>
@@ -1961,13 +1968,28 @@ function renderAccessBlocked() {
 function renderPasswordSetup() {
   return `<main class="auth-page"><section class="auth-card-wrap"><div class="auth-card"><h2>Choisir votre mot de passe</h2><p>Utilisez au moins 10 caractères et un mot de passe unique.</p><form class="auth-form" data-form="password-setup"><label class="field"><span>Nouveau mot de passe</span><input class="text-input" name="password" type="password" autocomplete="new-password" minlength="10" required /></label><label class="field"><span>Confirmer le mot de passe</span><input class="text-input" name="password_confirm" type="password" autocomplete="new-password" minlength="10" required /></label><button class="btn btn-dark" type="submit">Enregistrer mon mot de passe</button></form></div></section></main>`
 }
+// Empreinte des données affichées : permet de ne pas redessiner quand rien n'a changé (le sondage
+// toutes les 5 s remplaçait tout le DOM et ramenait la page en haut).
+function remoteFingerprint() {
+  return JSON.stringify([state.prospects, state.members, state.membership, STATUS_LABELS, STATUS_META, PIPELINE_PREFS])
+}
+
 function render() {
   if (state.loading) return
+  // Conserve le défilement de la page et des zones défilantes internes, car innerHTML remplace tout le DOM.
+  const scrollY = window.scrollY
+  const inner = [...app.querySelectorAll('.table-scroll, .kanban-scroll, .kpi-scroller, .panel.is-expanded, .detail-panel.detail-open')]
+    .map(el => ({ key: el.className, left: el.scrollLeft, top: el.scrollTop }))
   if (state.backend === 'supabase' && !state.session) app.innerHTML = renderAuth()
   else if (state.backend === 'supabase' && state.authSetup) app.innerHTML = renderPasswordSetup()
   else if (state.backend === 'supabase' && !state.membership) app.innerHTML = renderAccessBlocked()
   else app.innerHTML = renderAppShell()
   document.body.classList.toggle('has-expanded', Boolean(state.expandedPanel))
+  for (const saved of inner) {
+    const el = [...app.querySelectorAll('.table-scroll, .kanban-scroll, .kpi-scroller, .panel.is-expanded, .detail-panel.detail-open')].find(x => x.className === saved.key)
+    if (el) { el.scrollLeft = saved.left; el.scrollTop = saved.top }
+  }
+  if (scrollY) window.scrollTo(0, scrollY)
 }
 
 function nullable(value) {
@@ -1976,7 +1998,7 @@ function nullable(value) {
 }
 
 // Colonnes texte "not null default ''" côté Supabase : un champ vide doit partir en '', pas en null
-const REMOTE_TEXT_COLUMNS = ['contact_name', 'email', 'phone', 'notes', 'competitor']
+const REMOTE_TEXT_COLUMNS = ['contact_name', 'contact_role', 'email', 'phone', 'notes', 'competitor']
 function remotePayload(payload) {
   const clean = { ...payload }
   for (const key of REMOTE_TEXT_COLUMNS) if (key in clean && clean[key] == null) clean[key] = ''
@@ -1987,6 +2009,7 @@ function prospectPayload(formData) {
   return {
     company: String(formData.get('company') || '').trim(),
     contact_name: nullable(formData.get('contact_name')),
+    contact_role: nullable(formData.get('contact_role')),
     email: nullable(formData.get('email')),
     phone: nullable(formData.get('phone')),
     status: String(formData.get('status') || 'Identifié'),
@@ -2465,7 +2488,7 @@ function validateBackup(input) {
    if(!p || typeof p!=='object' || Array.isArray(p) || typeof p.id!=='string' || !p.id.trim() || ids.has(p.id) || typeof p.company!=='string' || !p.company.trim() || !STATUSES.includes(p.status)) throw new Error(`Prospect ${i+1} : identité ou statut invalide.`);
    ids.add(p.id);
    for(const field of DATE_FIELDS) if(p[field]!=null && p[field]!=='' && !validDate(p[field])) throw new Error(`Prospect ${i+1} : date ${field} invalide.`);
-   for(const field of ['contact_name','email','phone','notes','competitor','owner_id']) if(p[field]!=null && typeof p[field]!=='string') throw new Error(`Prospect ${i+1} : champ ${field} invalide.`);
+   for(const field of ['contact_name','contact_role','email','phone','notes','competitor','owner_id']) if(p[field]!=null && typeof p[field]!=='string') throw new Error(`Prospect ${i+1} : champ ${field} invalide.`);
    if(p.priority!=null && ![...PRIORITIES,'Basse','Urgente'].includes(p.priority)) throw new Error(`Prospect ${i+1} : priorité invalide.`);
    if(p.source_order!=null && (typeof p.source_order!=='number'||!Number.isFinite(p.source_order))) throw new Error('Ordre de prospect invalide.');
    for(const field of ['created_at','updated_at']) if(p[field]!=null && (typeof p[field]!=='string'||!Number.isFinite(Date.parse(p[field])))) throw new Error('Horodatage de prospect invalide.');

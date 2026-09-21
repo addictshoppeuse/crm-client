@@ -8,7 +8,7 @@ const CLOSED_STATUSES = new Set(['Gagné', 'Perdu'])
 const CRM_URL = Deno.env.get('CRM_URL') || 'https://addictshoppeuse.github.io/crm-client/'
 
 type Prospect = {
-  id: string; company: string; contact_name: string; phone: string; email: string; status: string
+  id: string; company: string; contact_name: string; contact_role: string; phone: string; email: string; status: string
   reminder_date: string | null; followup_date: string | null; next_meeting: string | null; contract_end: string | null
   notes: string | null; updated_at: string
 }
@@ -38,7 +38,7 @@ function stampUtc(value: string | Date) {
 
 function event(uid: string, summary: string, p: Prospect, opts: { allDay?: string; start?: string; kind: string }) {
   const desc = [
-    p.contact_name ? `Contact : ${p.contact_name}` : '',
+    p.contact_name ? `Contact : ${p.contact_name}${p.contact_role ? ' — ' + p.contact_role : ''}` : '',
     p.phone ? `Téléphone : ${p.phone}` : '',
     p.email ? `Email : ${p.email}` : '',
     `Statut : ${p.status}`,
@@ -80,7 +80,7 @@ Deno.serve(async req => {
   if (!membership || membership.state !== 'active') return new Response('Accès désactivé', { status: 403 })
 
   const { data: rows, error } = await admin.from('prospects')
-    .select('id,company,contact_name,phone,email,status,reminder_date,followup_date,next_meeting,contract_end,notes,updated_at')
+    .select('id,company,contact_name,contact_role,phone,email,status,reminder_date,followup_date,next_meeting,contract_end,notes,updated_at')
     .eq('organization_id', pref.organization_id)
   if (error) return new Response('Erreur de lecture', { status: 500 })
 
