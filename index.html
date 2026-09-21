@@ -1347,6 +1347,56 @@ function restoreDirtyFields(saved) {
   }
 }
 
+// Brouillons : la saisie non enregistrée est copiée en local pendant la frappe et remise en place
+// après un rechargement de page (navigation vers un autre site, fermeture accidentelle…).
+const DRAFT_KEY = 'dovozo-drafts'
+const DRAFT_FORMS = new Set(['quick-save', 'editor', 'activity'])
+function readDrafts() { try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || '{}') } catch { return {} } }
+function draftId(form) { return `${form.dataset.form}|${form.dataset.id || ''}` }
+function saveDraftsFromDom() {
+  const drafts = readDrafts()
+  for (const form of app.querySelectorAll('form[data-form]')) {
+    if (!DRAFT_FORMS.has(form.dataset.form)) continue
+    const fields = {}
+    for (const field of form.querySelectorAll('input[name], textarea[name], select[name]')) {
+      if (field.type === 'submit' || field.type === 'search') continue
+      if (fieldIsDirty(field)) fields[field.name] = field.type === 'checkbox' ? field.checked : field.value
+    }
+    const key = draftId(form)
+    if (Object.keys(fields).length) drafts[key] = { fields, at: Date.now() }
+    else delete drafts[key]
+  }
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)) } catch {}
+}
+function clearDraft(formName, id = '') {
+  const drafts = readDrafts()
+  delete drafts[`${formName}|${id}`]
+  try { localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts)) } catch {}
+}
+function applyDrafts() {
+  const drafts = readDrafts()
+  let restored = 0
+  for (const form of app.querySelectorAll('form[data-form]')) {
+    const draft = drafts[draftId(form)]
+    if (!draft || Date.now() - draft.at > 7 * 24 * 3600 * 1000) continue
+    for (const [name, value] of Object.entries(draft.fields)) {
+      const field = form.querySelector(`[name="${name}"]`)
+      if (!field) continue
+      if (field.type === 'checkbox') field.checked = Boolean(value); else field.value = String(value)
+      if (fieldIsDirty(field)) restored++
+    }
+  }
+  return restored
+}
+let draftTimer = null
+app.addEventListener('input', () => { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraftsFromDom, 300) })
+app.addEventListener('change', () => { clearTimeout(draftTimer); draftTimer = setTimeout(saveDraftsFromDom, 100) })
+window.addEventListener('beforeunload', event => {
+  saveDraftsFromDom()
+  if (dirtyFields().length) { event.preventDefault(); event.returnValue = '' }
+})
+let draftNoticeShown = false
+
 function userIsEditing() {
   const active = document.activeElement
   if (state.editor) return true
@@ -2019,6 +2069,8 @@ function render() {
     if (el) { el.scrollLeft = saved.left; el.scrollTop = saved.top }
   }
   if (unsaved.length) restoreDirtyFields(unsaved)
+  const restored = applyDrafts()
+  if (restored && !unsaved.length && !draftNoticeShown) { draftNoticeShown = true; toast('Brouillon restauré : pensez à enregistrer.') }
   if (scrollY) window.scrollTo(0, scrollY)
 }
 
@@ -2421,6 +2473,7 @@ app.addEventListener('submit', async event => {
       await inviteMember(String(data.get('invite_email') || ''), String(data.get('invite_display_name') || ''))
       render(); toast('Invitation envoyée.')
     }
+    if (DRAFT_FORMS.has(formName)) clearDraft(formName, form.dataset.id || '')
   } catch (error) {
     console.error(error)
     if (formName === 'auth') { state.authMessage = error.message || 'Connexion impossible.'; render() }
