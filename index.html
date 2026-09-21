@@ -1321,9 +1321,37 @@ async function loadRemote(resubscribe = true) {
   if (!state.selectedId || !state.prospects.some(p => p.id === state.selectedId)) state.selectedId = state.prospects[0]?.id || null
   if (resubscribe && !state.realtimeChannels.length) subscribeToOrganization()
 }
+// Champs modifiés mais pas encore enregistrés (valeur différente de celle affichée au dernier rendu).
+function fieldIsDirty(field) {
+  if (field.type === 'checkbox' || field.type === 'radio') return field.checked !== field.defaultChecked
+  if (field.tagName === 'SELECT') return [...field.options].some(o => o.selected !== o.defaultSelected)
+  return field.value !== field.defaultValue
+}
+function dirtyFields() {
+  const out = []
+  for (const form of app.querySelectorAll('form[data-form]')) {
+    for (const field of form.querySelectorAll('input[name], textarea[name], select[name]')) {
+      if (field.type === 'search' || field.type === 'submit') continue
+      if (fieldIsDirty(field)) out.push({ form: form.dataset.form, id: form.dataset.id || '', name: field.name, type: field.type, value: field.value, checked: field.checked })
+    }
+  }
+  return out
+}
+function restoreDirtyFields(saved) {
+  for (const s of saved) {
+    const form = [...app.querySelectorAll(`form[data-form="${s.form}"]`)].find(f => (f.dataset.id || '') === s.id)
+    const field = form?.querySelector(`[name="${s.name}"]`)
+    if (!field) continue
+    if (s.type === 'checkbox' || s.type === 'radio') field.checked = s.checked
+    else field.value = s.value
+  }
+}
+
 function userIsEditing() {
   const active = document.activeElement
-  return Boolean(state.editor) || Boolean(active && active.closest && active.closest('input, textarea, select, [contenteditable="true"]'))
+  if (state.editor) return true
+  if (active && active.closest && active.closest('input, textarea, select, [contenteditable="true"]')) return true
+  return dirtyFields().length > 0 // saisie en cours dans une fiche, même sans focus (autre onglet, clic ailleurs)
 }
 
 async function refreshConnectedAccess() {
@@ -1978,6 +2006,7 @@ function render() {
   if (state.loading) return
   // Conserve le défilement de la page et des zones défilantes internes, car innerHTML remplace tout le DOM.
   const scrollY = window.scrollY
+  const unsaved = dirtyFields() // texte saisi non enregistré : restauré après le rendu
   const inner = [...app.querySelectorAll('.table-scroll, .kanban-scroll, .kpi-scroller, .panel.is-expanded, .detail-panel.detail-open')]
     .map(el => ({ key: el.className, left: el.scrollLeft, top: el.scrollTop }))
   if (state.backend === 'supabase' && !state.session) app.innerHTML = renderAuth()
@@ -1989,6 +2018,7 @@ function render() {
     const el = [...app.querySelectorAll('.table-scroll, .kanban-scroll, .kpi-scroller, .panel.is-expanded, .detail-panel.detail-open')].find(x => x.className === saved.key)
     if (el) { el.scrollLeft = saved.left; el.scrollTop = saved.top }
   }
+  if (unsaved.length) restoreDirtyFields(unsaved)
   if (scrollY) window.scrollTo(0, scrollY)
 }
 
